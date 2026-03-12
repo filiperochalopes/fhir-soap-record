@@ -1,0 +1,92 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --page-bg: #fdfaf4;
+    --page-ink: #132238;
+    --panel: rgba(255, 255, 255, 0.76);
+    --panel-border: rgba(19, 34, 56, 0.1);
+    --muted: #5f6b7c;
+    --accent: #c2410c;
+    --accent-soft: rgba(194, 65, 12, 0.12);
+  }
+
+  .dark {
+    color-scheme: dark;
+    --page-bg: #09101d;
+    --page-ink: #ebf1f8;
+    --panel: rgba(15, 23, 42, 0.82);
+    --panel-border: rgba(226, 232, 240, 0.12);
+    --muted: #a6b1c2;
+    --accent: #f97316;
+    --accent-soft: rgba(249, 115, 22, 0.16);
+  }
+
+  html {
+    @apply min-h-full bg-transparent;
+  }
+
+  body {
+    color: var(--page-ink);
+    background:
+      radial-gradient(circle at top left, rgba(234, 216, 176, 0.45), transparent 28%),
+      radial-gradient(circle at top right, rgba(194, 65, 12, 0.12), transparent 32%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 28%),
+      var(--page-bg);
+    @apply min-h-screen antialiased;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply rounded-xl border px-3 py-2 text-sm shadow-sm;
+    background: rgba(255, 255, 255, 0.84);
+    border-color: var(--panel-border);
+    color: var(--page-ink);
+  }
+
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background: rgba(15, 23, 42, 0.92);
+  }
+
+  textarea {
+    @apply min-h-28;
+  }
+}
+
+@layer components {
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    @apply rounded-3xl shadow-sm backdrop-blur;
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90;
+    background: var(--accent);
+  }
+
+  .button-secondary {
+    background: var(--accent-soft);
+    color: var(--page-ink);
+    border: 1px solid var(--panel-border);
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition hover:opacity-90;
+  }
+
+  .field-label {
+    color: var(--muted);
+    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.18em];
+  }
+
+  .form-grid {
+    @apply grid gap-4 md:grid-cols-2;
+  }
+}
+

@@ -1,0 +1,10 @@
+node_modules
+.react-router
+build
+.vite
+.DS_Store
+.env
+coverage
+dist
+*.log
+

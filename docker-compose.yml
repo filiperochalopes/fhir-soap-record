@@ -1,0 +1,36 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: fhir_soap_record
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: clinic
+      MYSQL_PASSWORD: clinic
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/mysql/full-schema.sql:/docker-entrypoint-initdb.d/001_full_schema.sql:ro
+
+  app:
+    build:
+      context: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://clinic:clinic@db:3306/fhir_soap_record
+      APP_URL: http://localhost:3000
+      COOKIE_NAME: clinic_token
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  mysql_data:

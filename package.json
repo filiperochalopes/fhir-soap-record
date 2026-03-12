@@ -1,0 +1,46 @@
+{
+  "name": "fhir-soap-record",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "react-router build",
+    "start": "react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "create:user": "tsx scripts/create-auth-user.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.6.0",
+    "@react-router/node": "^7.4.0",
+    "@react-router/serve": "^7.4.0",
+    "clsx": "^2.1.1",
+    "cookie": "^1.0.2",
+    "isbot": "^5.1.29",
+    "prisma": "^6.6.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.4.0",
+    "swagger-ui-react": "^5.24.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.4.0",
+    "@tailwindcss/forms": "^0.5.10",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^5.4.14",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}

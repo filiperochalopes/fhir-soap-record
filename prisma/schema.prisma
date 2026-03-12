@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id        Int      @id @default(autoincrement())
+  name      String
+  gender    String
+  birthDate DateTime @map("birth_date") @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  telecom      ContactPoint[]
+  identifier   Identifier[]
+  appointments Appointment[]
+  contacts     Contact[]
+  soapNotes    SoapNote[]
+}
+
+model Contact {
+  id           Int      @id @default(autoincrement())
+  name         String
+  relationship String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  patientId Int     @map("patient_id")
+  patient   Patient @relation(fields: [patientId], references: [id])
+}
+
+model ContactPoint {
+  id        Int      @id @default(autoincrement())
+  system    String
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  patientId Int?     @map("patient_id")
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  @@unique([system, value, patientId])
+}
+
+model Identifier {
+  id        Int      @id @default(autoincrement())
+  system    String
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  patientId Int?     @map("patient_id")
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  @@unique([system, value])
+}
+
+model Appointment {
+  id              Int      @id @default(autoincrement())
+  patientId       Int      @map("patient_id")
+  start           DateTime
+  end             DateTime
+  status          String
+  appointmentType String   @map("appointment_type")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  patient Patient @relation(fields: [patientId], references: [id])
+}
+
+model GeneralSetting {
+  id        Int      @id @default(autoincrement())
+  property  String
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+}
+
+model AuthUser {
+  id        Int      @id @default(autoincrement())
+  fullName  String   @map("full_name")
+  crm       String
+  crmUf     String   @map("crm_uf")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tokens    AuthToken[]
+  soapNotes SoapNote[]
+  auditLogs AuditLog[]
+
+  @@unique([crm, crmUf])
+}
+
+model AuthToken {
+  id         Int       @id @default(autoincrement())
+  tokenHash  String    @map("token_hash")
+  isActive   Boolean   @default(true) @map("is_active")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  userId Int      @map("user_id")
+  user   AuthUser @relation(fields: [userId], references: [id])
+
+  @@unique([tokenHash])
+}
+
+model SoapNote {
+  id             Int       @id @default(autoincrement())
+  patientId      Int       @map("patient_id")
+  authorUserId   Int       @map("author_user_id")
+  encounteredAt  DateTime  @map("encountered_at")
+  subjective     String    @db.Text
+  objective      String    @db.Text
+  assessment     String    @db.Text
+  plan           String    @db.Text
+  sourceSystem   String?   @map("source_system")
+  sourceRecordId String?   @map("source_record_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  patient Patient  @relation(fields: [patientId], references: [id])
+  author  AuthUser @relation(fields: [authorUserId], references: [id])
+
+  @@unique([sourceSystem, sourceRecordId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  category   String
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  userId Int?      @map("user_id")
+  user   AuthUser? @relation(fields: [userId], references: [id])
+}
+

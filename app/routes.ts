@@ -1,0 +1,30 @@
+import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
+
+export default [
+  index("routes/_index.tsx"),
+  route("login", "routes/login.tsx"),
+  route("logout", "routes/logout.tsx"),
+  route("openapi.json", "routes/openapi.json.ts"),
+  route("docs", "routes/docs.tsx"),
+  route("api/import", "routes/api.import.ts"),
+  route("fhir", "routes/fhir.index.ts"),
+  route("fhir/metadata", "routes/fhir.metadata.ts"),
+  route("fhir/Patient", "routes/fhir.Patient.ts"),
+  route("fhir/Patient/:id", "routes/fhir.Patient.$id.ts"),
+  route("fhir/Appointment", "routes/fhir.Appointment.ts"),
+  route("fhir/Appointment/:id", "routes/fhir.Appointment.$id.ts"),
+  route("fhir/Composition", "routes/fhir.Composition.ts"),
+  route("fhir/Composition/:id", "routes/fhir.Composition.$id.ts"),
+  route("fhir/Encounter/:id", "routes/fhir.Encounter.$id.ts"),
+  route("fhir/Observation/:id", "routes/fhir.Observation.$id.ts"),
+  route("fhir/Condition/:id", "routes/fhir.Condition.$id.ts"),
+  route("fhir/ClinicalImpression/:id", "routes/fhir.ClinicalImpression.$id.ts"),
+  layout("routes/app.tsx", [
+    route("patients", "routes/app.patients.tsx"),
+    route("patients/new", "routes/app.patients.new.tsx"),
+    route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
+    route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
+    route("agenda", "routes/app.agenda.tsx"),
+  ]),
+] satisfies RouteConfig;
+
