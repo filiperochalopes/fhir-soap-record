@@ -5,7 +5,7 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
       title: "FHIR SOAP Record MVP API",
       version: "0.1.0",
       description:
-        "Single-runtime clinical MVP with token authentication, proprietary import, and FHIR-oriented endpoints.",
+        "Single-runtime clinical MVP with token authentication and FHIR-oriented endpoints.",
     },
     servers: [{ url: serverUrl }],
     components: {
@@ -31,82 +31,6 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                 properties: {
                   item: { type: "string" },
                   message: { type: "string" },
-                },
-              },
-            },
-          },
-        },
-        ProprietaryImportPayload: {
-          type: "object",
-          required: ["sourceSystem", "patients"],
-          properties: {
-            sourceSystem: { type: "string", example: "legacy-office-system" },
-            patients: {
-              type: "array",
-              items: {
-                type: "object",
-                required: ["name", "gender", "birthDate", "soapNotes"],
-                properties: {
-                  externalId: { type: "string", example: "LEG-1001" },
-                  name: { type: "string", example: "Maria de Souza" },
-                  gender: { type: "string", example: "female" },
-                  birthDate: { type: "string", format: "date", example: "1980-09-14" },
-                  identifiers: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        system: { type: "string", example: "cpf" },
-                        value: { type: "string", example: "11122233344" },
-                      },
-                    },
-                  },
-                  telecom: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        system: { type: "string", example: "phone" },
-                        value: { type: "string", example: "+55 71 99999-0000" },
-                      },
-                    },
-                  },
-                  contacts: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", example: "Joao de Souza" },
-                        relationship: { type: "string", example: "Brother" },
-                      },
-                    },
-                  },
-                  soapNotes: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      required: [
-                        "sourceRecordId",
-                        "encounteredAt",
-                        "subjective",
-                        "objective",
-                        "assessment",
-                        "plan",
-                      ],
-                      properties: {
-                        sourceRecordId: { type: "string", example: "SOAP-993" },
-                        encounteredAt: {
-                          type: "string",
-                          format: "date-time",
-                          example: "2026-03-10T14:30:00Z",
-                        },
-                        subjective: { type: "string", example: "Headache for 2 days." },
-                        objective: { type: "string", example: "Afebrile. BP 120/80." },
-                        assessment: { type: "string", example: "Tension headache." },
-                        plan: { type: "string", example: "Hydration and analgesic guidance." },
-                      },
-                    },
-                  },
                 },
               },
             },
@@ -293,17 +217,74 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                       resource: {
                         resourceType: "Patient",
                         id: "external-patient-1",
-                        name: [{ text: "Maria de Souza" }],
+                        identifier: [
+                          {
+                            system: "https://clinic.example.org/patients",
+                            value: "external-patient-1",
+                          },
+                          {
+                            system: "https://www.gov.br/cpf",
+                            value: "11122233344",
+                          },
+                        ],
+                        name: [
+                          {
+                            use: "official",
+                            text: "Maria de Souza",
+                            family: "Souza",
+                            given: ["Maria"],
+                          },
+                        ],
                         gender: "female",
                         birthDate: "1980-09-14",
+                        telecom: [
+                          {
+                            system: "phone",
+                            value: "+55 71 99999-0000",
+                            use: "mobile",
+                          },
+                          {
+                            system: "email",
+                            value: "maria.souza@example.org",
+                            use: "home",
+                          },
+                        ],
+                        contact: [
+                          {
+                            relationship: [{ text: "Brother" }],
+                            name: { text: "Joao de Souza" },
+                          },
+                        ],
+                      },
+                    },
+                    {
+                      fullUrl: "urn:uuid:encounter-1",
+                      resource: {
+                        resourceType: "Encounter",
+                        id: "encounter-1",
+                        subject: { reference: "urn:uuid:patient-1" },
+                        period: {
+                          start: "2026-03-10T14:30:00Z",
+                        },
                       },
                     },
                     {
                       resource: {
                         resourceType: "Composition",
                         id: "soap-1",
+                        identifier: [
+                          {
+                            system: "https://clinic.example.org/soap-notes",
+                            value: "SOAP-993",
+                          },
+                        ],
                         subject: { reference: "urn:uuid:patient-1" },
-                        date: "2026-03-10T14:30:00Z",
+                        encounter: { reference: "urn:uuid:encounter-1" },
+                        title: "SOAP note",
+                        status: "final",
+                        type: {
+                          text: "SOAP note",
+                        },
                         section: [
                           {
                             title: "Subjective",
@@ -326,6 +307,65 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                     },
                   ],
                 },
+                examples: {
+                  withCompositionDate: {
+                    summary: "Composition carries the encounter date directly",
+                    value: {
+                      resourceType: "Bundle",
+                      type: "transaction",
+                      entry: [
+                        {
+                          fullUrl: "urn:uuid:patient-1",
+                          resource: {
+                            resourceType: "Patient",
+                            id: "external-patient-1",
+                            name: [{ text: "Maria de Souza" }],
+                            gender: "female",
+                            birthDate: "1980-09-14",
+                          },
+                        },
+                        {
+                          resource: {
+                            resourceType: "Composition",
+                            id: "soap-1",
+                            subject: { reference: "urn:uuid:patient-1" },
+                            date: "2026-03-10T14:30:00Z",
+                            section: [
+                              {
+                                title: "Subjective",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Headache for 2 days.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Objective",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Afebrile. BP 120/80.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Assessment",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Tension headache.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Plan",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Hydration and analgesic guidance.</p></div>",
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
               },
             },
           },
@@ -335,29 +375,6 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
               content: {
                 "application/fhir+json": {
                   schema: { type: "object" },
-                },
-              },
-            },
-          },
-        },
-      },
-      "/api/import": {
-        post: {
-          summary: "Import proprietary clinical JSON",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/ProprietaryImportPayload" },
-              },
-            },
-          },
-          responses: {
-            "200": {
-              description: "Import summary",
-              content: {
-                "application/json": {
-                  schema: { $ref: "#/components/schemas/ImportSummary" },
                 },
               },
             },

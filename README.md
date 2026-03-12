@@ -9,7 +9,7 @@ The application is intentionally narrow:
 - read-only agenda
 - SOAP note registration
 - FHIR-oriented API
-- proprietary and FHIR import
+- FHIR Bundle import
 - Swagger/OpenAPI docs
 - Docker-based execution
 
@@ -136,24 +136,22 @@ With the default local configuration:
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - FHIR metadata: `http://localhost:3000/fhir/metadata`
 - FHIR patient search: `http://localhost:3000/fhir/Patient`
-- proprietary import: `POST http://localhost:3000/api/import`
 - FHIR Bundle import: `POST http://localhost:3000/fhir`
 
 ## Import Notes
-
-The proprietary import endpoint accepts focused JSON for patients and SOAP records. It validates before persistence and returns a concise summary with:
-
-- `processed`
-- `created`
-- `updated`
-- `skipped`
-- `errors`
 
 The FHIR import endpoint accepts a focused subset of `Bundle` payloads for:
 
 - `Patient`
 - `Composition`
 - referenced `Encounter`, `Observation`, `Condition`, and `ClinicalImpression` when needed to derive SOAP content
+
+For import, the `Patient` can include optional fields such as `identifier`, `telecom`, and `contact`.
+
+For SOAP import, the `Composition` can provide the encounter date in either of these ways:
+
+- directly in `Composition.date`
+- indirectly through `Encounter.period.start` referenced by `Composition.encounter`
 
 ## Feature Scope
 
@@ -171,7 +169,6 @@ Implemented API surface:
 - patient FHIR routes
 - appointment FHIR routes
 - SOAP-derived FHIR routes through `Composition`, `Encounter`, `Observation`, `Condition`, and `ClinicalImpression`
-- `POST /api/import`
 - `POST /fhir`
 - `GET /openapi.json`
 - `GET /docs`

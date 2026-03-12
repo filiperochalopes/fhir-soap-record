@@ -4,10 +4,7 @@ import { writeAuditLog } from "~/lib/audit.server";
 import { prisma } from "~/lib/prisma.server";
 import { upsertImportedPatient } from "~/lib/patients.server";
 import { createSoapNote, ensureImportUser } from "~/lib/soap-notes.server";
-import type {
-  BundlePayload,
-  ProprietaryImportPayload,
-} from "~/lib/validation/import";
+import type { BundlePayload } from "~/lib/validation/import";
 import { stripHtml } from "~/lib/utils";
 
 type ImportSummary = {
@@ -190,62 +187,6 @@ function sectionText(
   }
 
   return "";
-}
-
-export async function importProprietaryPayload(
-  payload: ProprietaryImportPayload,
-  actor: AuthUser,
-) {
-  const summary = emptySummary();
-  const importUser = await ensureImportUser();
-
-  for (const patientItem of payload.patients) {
-    try {
-      summary.processed += 1;
-      const patientResult = await upsertImportedPatient({
-        actorUserId: actor.id,
-        input: patientItem,
-        sourceSystem: payload.sourceSystem,
-      });
-      summary[patientResult.status] += 1;
-
-      for (const note of patientItem.soapNotes) {
-        summary.processed += 1;
-        const created = await createSoapNote({
-          assessment: note.assessment,
-          authorUserId: importUser.id,
-          encounteredAt: note.encounteredAt,
-          objective: note.objective,
-          patientId: patientResult.patient.id,
-          plan: note.plan,
-          sourceRecordId: note.sourceRecordId,
-          sourceSystem: payload.sourceSystem,
-          subjective: note.subjective,
-        });
-
-        if (created) {
-          summary.created += 1;
-        } else {
-          summary.skipped += 1;
-        }
-      }
-    } catch (error) {
-      summary.errors.push({
-        item: patientItem.name,
-        message: error instanceof Error ? error.message : "Unexpected import error",
-      });
-    }
-  }
-
-  await writeAuditLog(prisma, {
-    action: "import.proprietary.executed",
-    category: "import",
-    entityType: "ImportJob",
-    metadata: summary,
-    userId: actor.id,
-  });
-
-  return summary;
 }
 
 async function resolveReferencedPatient(

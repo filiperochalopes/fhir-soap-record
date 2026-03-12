@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-import { patientImportSchema } from "~/lib/validation/patients";
-
-export const proprietaryImportSchema = z.object({
-  patients: z.array(patientImportSchema).min(1, "At least one patient is required"),
-  sourceSystem: z.string().trim().min(1, "sourceSystem is required"),
-});
-
-export type ProprietaryImportPayload = z.infer<typeof proprietaryImportSchema>;
-
 export const bundleSchema = z.object({
   entry: z
     .array(
@@ -23,4 +14,3 @@ export const bundleSchema = z.object({
 });
 
 export type BundlePayload = z.infer<typeof bundleSchema>;
-

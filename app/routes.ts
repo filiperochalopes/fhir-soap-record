@@ -6,7 +6,6 @@ export default [
   route("logout", "routes/logout.tsx"),
   route("openapi.json", "routes/openapi.json.ts"),
   route("docs", "routes/docs.tsx"),
-  route("api/import", "routes/api.import.ts"),
   route("fhir", "routes/fhir.index.ts"),
   route("fhir/metadata", "routes/fhir.metadata.ts"),
   route("fhir/Patient", "routes/fhir.Patient.ts"),
@@ -27,4 +26,3 @@ export default [
     route("agenda", "routes/app.agenda.tsx"),
   ]),
 ] satisfies RouteConfig;
-

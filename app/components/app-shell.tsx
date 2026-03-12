@@ -14,11 +14,11 @@ type LoaderData = {
 const links = [
   { label: "Patients", to: "/patients" },
   { label: "Agenda", to: "/agenda" },
-  { label: "Docs", to: "/docs" },
 ];
 
 export function AppShell() {
   const { user } = useLoaderData() as LoaderData;
+  const currentYear = new Date().getFullYear();
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -64,7 +64,36 @@ export function AppShell() {
       <main>
         <Outlet />
       </main>
+      <footer className="mt-10 border-t border-black/5 px-2 py-6 text-sm text-[color:var(--muted)] dark:border-white/10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Developed br{" "}
+            <a
+              className="font-medium text-[color:var(--foreground)] transition hover:text-[color:var(--accent)]"
+              href="https://link.orango.io/Iyqdm"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Filipe Lopes
+            </a>
+            {", MD © "}
+            {currentYear}
+          </p>
+          <div className="flex items-center gap-4">
+            <Link className="transition hover:text-[color:var(--accent)]" to="/docs">
+              Docs
+            </Link>
+            <a
+              className="transition hover:text-[color:var(--accent)]"
+              href="https://github.com/filiperochalopes/fhir-soap-record"
+              rel="noreferrer"
+              target="_blank"
+            >
+              Github
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
-
