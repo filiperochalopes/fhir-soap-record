@@ -25,7 +25,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/scripts/start-app.sh ./scripts/start-app.sh
+
+RUN chmod +x ./scripts/start-app.sh
 
 EXPOSE 3000
 
-CMD ["./node_modules/.bin/react-router-serve", "./build/server/index.js"]
+CMD ["./scripts/start-app.sh"]

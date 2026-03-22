@@ -3,7 +3,7 @@ services:
     build:
       context: .
       target: deps
-    command: sh -lc "corepack enable && pnpm prisma generate && pnpm dev --host 0.0.0.0 --port 3000"
+    command: sh ./scripts/dev-with-prisma.sh
     environment:
       CHOKIDAR_USEPOLLING: "true"
     volumes:

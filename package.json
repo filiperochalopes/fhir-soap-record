@@ -13,6 +13,9 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc --noEmit",
     "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:resolve": "prisma migrate resolve",
     "create:user": "tsx scripts/create-auth-user.ts"
   },
   "dependencies": {

@@ -1,0 +1,5 @@
+services:
+  app:
+    depends_on: []
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to your external MySQL address before starting the app}

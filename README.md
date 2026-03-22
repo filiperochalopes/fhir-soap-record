@@ -20,7 +20,7 @@ The implementation stays as a single full-stack monolith and follows `YAGNI`, `D
 - React Router v7 in framework mode
 - React + TypeScript
 - Node.js
-- Prisma Client
+- Prisma ORM
 - MySQL
 - Tailwind CSS
 - OpenAPI + Swagger UI
@@ -30,8 +30,9 @@ Operational rules in this codebase:
 
 - frontend and backend run in the same Node application
 - web routes and API routes are served by the same runtime
-- Prisma is the typed ORM client, but Prisma migrations are not treated as the authoritative deployment mechanism for the shared database
-- the existing shared schema remains the source of truth
+- the default local stack uses the MySQL container from Docker Compose
+- schema changes are versioned through Prisma migrations in `prisma/migrations/`
+- Prisma Client remains the typed access layer used by the application
 - internal persistence stays workflow-oriented, while the API layer exposes FHIR-aligned resources
 
 ## Entity and FHIR Diagram
@@ -75,11 +76,11 @@ cp .env.example .env
 pnpm prisma:generate
 ```
 
-4. Point `DATABASE_URL` at your MySQL instance.
+4. Apply migrations to the database pointed to by `DATABASE_URL`.
 
-For a standalone local database, use the schema in [sql/mysql/full-schema.sql](/Users/filipelopes/Desktop/Development/fhir-soap-record/sql/mysql/full-schema.sql).
-
-For an existing shared database that already contains `Patient`, `Contact`, `ContactPoint`, `Identifier`, `Appointment`, and `GeneralSetting`, apply only [sql/mysql/mvp-additions.sql](/Users/filipelopes/Desktop/Development/fhir-soap-record/sql/mysql/mvp-additions.sql) and keep the existing data model in place.
+```bash
+pnpm prisma:migrate:deploy
+```
 
 5. Start the application.
 
@@ -95,24 +96,43 @@ Use Docker Compose for a full local stack with MySQL and the Node monolith:
 docker compose up --build
 ```
 
-Compose uses [sql/mysql/full-schema.sql](/Users/filipelopes/Desktop/Development/fhir-soap-record/sql/mysql/full-schema.sql) to initialize the local database.
+The `db` service creates the empty `fhir_soap_record` database, and the `app` service applies Prisma migrations automatically on startup.
+
+If ports `3000` or `3306` are already in use on the host, override them with `APP_PORT` and `MYSQL_PORT`.
+
+To run the app against an external MySQL address instead of the bundled `db` service:
+
+```bash
+export DATABASE_URL="mysql://user:password@host:3306/database"
+docker compose -f docker-compose.yml -f docker-compose.external.yml up --build app
+```
+
+If that external database already has the application tables and was not created by Prisma Migrate, baseline it once before the first deploy:
+
+```bash
+pnpm prisma:migrate:resolve --applied 20260322000000_init
+pnpm prisma:migrate:deploy
+```
 
 ## Environment Variables
 
 - `DATABASE_URL`: MySQL connection string used by Prisma Client
+- `APP_PORT`: host port published for the web app in Docker Compose
 - `APP_URL`: external base URL used in generated docs and examples
+- `MYSQL_PORT`: host port published for MySQL in Docker Compose
 - `PORT`: Node application port
 - `COOKIE_NAME`: auth cookie name for web login
 
-## Prisma Client Usage
+## Prisma Usage
 
-This project uses Prisma Client for reads, writes, and typing, but it does not assume ownership of the full lifecycle of the shared database.
+This project uses Prisma ORM for schema versioning and Prisma Client for reads, writes, and typing.
 
 Practical rule:
 
 - run `pnpm prisma:generate` after schema changes
-- do not assume `prisma migrate deploy` is the correct deployment path for the shared schema
-- use the SQL files in `sql/mysql/` to bootstrap the standalone database or add only the MVP tables to a shared database
+- create new schema changes with `pnpm prisma:migrate:dev --name <migration-name>`
+- apply committed migrations with `pnpm prisma:migrate:deploy`
+- when adopting an existing external schema, mark the initial migration as applied before deploying further changes
 
 ## Create a User and Token
 
