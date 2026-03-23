@@ -95,7 +95,7 @@ export default function PatientsRoute() {
                     Edit
                   </Link>
                   <Link className="button-primary" to={`/patients/${patient.id}/soap`}>
-                    Register SOAP
+                    Register notes
                   </Link>
                 </div>
               </div>
@@ -112,4 +112,3 @@ export default function PatientsRoute() {
     </div>
   );
 }
-

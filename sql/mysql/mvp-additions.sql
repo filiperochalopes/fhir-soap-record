@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS SoapNote (
   CONSTRAINT fk_soap_note_author FOREIGN KEY (author_user_id) REFERENCES AuthUser(id)
 );
 
+CREATE TABLE IF NOT EXISTS NarrativeNote (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  patient_id INT NOT NULL,
+  author_user_id INT NOT NULL,
+  encountered_at DATETIME NOT NULL,
+  title VARCHAR(255) NULL,
+  sections JSON NOT NULL,
+  source_system VARCHAR(255) NULL,
+  source_record_id VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_narrative_source (source_system, source_record_id),
+  CONSTRAINT fk_narrative_note_patient FOREIGN KEY (patient_id) REFERENCES Patient(id),
+  CONSTRAINT fk_narrative_note_author FOREIGN KEY (author_user_id) REFERENCES AuthUser(id)
+);
+
 CREATE TABLE IF NOT EXISTS AuditLog (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   user_id INT NULL,

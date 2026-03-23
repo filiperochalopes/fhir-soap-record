@@ -77,6 +77,26 @@ export function escapeHtml(value: string) {
 }
 
 export function stripHtml(value: string) {
-  return value.replace(/<[^>]+>/g, "").trim();
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n\n")
+    .replace(/<\/(div|li|ul|ol|section|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
+export function toFhirNarrativeDiv(value: string) {
+  const paragraphs = value
+    .trim()
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map(
+      (paragraph) =>
+        `<p>${escapeHtml(paragraph).replace(/\n/g, "<br/>")}</p>`,
+    )
+    .join("");
+
+  return `<div xmlns="http://www.w3.org/1999/xhtml">${paragraphs || "<p></p>"}</div>`;
+}

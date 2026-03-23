@@ -162,7 +162,7 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
       },
       "/fhir/Composition": {
         get: {
-          summary: "Search SOAP compositions",
+          summary: "Search clinical compositions",
           parameters: [
             { in: "query", name: "patient", schema: { type: "string" } },
           ],
@@ -180,7 +180,7 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
       },
       "/fhir/Composition/{id}": {
         get: {
-          summary: "Read SOAP composition",
+          summary: "Read clinical composition",
           parameters: [
             {
               in: "path",
@@ -357,6 +357,43 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                                 text: {
                                   status: "generated",
                                   div: "<div><p>Hydration and analgesic guidance.</p></div>",
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  withNarrativeSections: {
+                    summary: "Composition carries a free-text consultation note",
+                    value: {
+                      resourceType: "Bundle",
+                      type: "transaction",
+                      entry: [
+                        {
+                          fullUrl: "urn:uuid:patient-2",
+                          resource: {
+                            resourceType: "Patient",
+                            id: "external-patient-2",
+                            name: [{ text: "Joao Pereira" }],
+                            gender: "male",
+                            birthDate: "1978-06-22",
+                          },
+                        },
+                        {
+                          resource: {
+                            resourceType: "Composition",
+                            id: "consult-note-1",
+                            subject: { reference: "urn:uuid:patient-2" },
+                            date: "2026-03-12T10:15:00Z",
+                            title: "Consulta ambulatorial",
+                            section: [
+                              {
+                                title: "Narrativa clinica",
+                                text: {
+                                  status: "generated",
+                                  div: "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Paciente comparece relatando tosse seca ha 5 dias, sem dispneia e sem febre. Orientado retorno se piora.</p></div>",
                                 },
                               },
                             ],

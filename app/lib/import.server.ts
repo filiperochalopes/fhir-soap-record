@@ -1,6 +1,7 @@
 import type { AuthUser } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
+import { createNarrativeNote } from "~/lib/narrative-notes.server";
 import { prisma } from "~/lib/prisma.server";
 import { upsertImportedPatient } from "~/lib/patients.server";
 import { createSoapNote, ensureImportUser } from "~/lib/soap-notes.server";
@@ -189,6 +190,72 @@ function sectionText(
   return "";
 }
 
+function sectionNarratives(
+  resourceMap: Map<string, Record<string, unknown>>,
+  sections: unknown[],
+) {
+  return sections.flatMap((section) => {
+    const record = asRecord(section);
+    if (!record) {
+      return [];
+    }
+
+    const title = typeof record.title === "string" ? record.title.trim() : "";
+    const textRecord = asRecord(record.text);
+    if (textRecord && typeof textRecord.div === "string") {
+      const text = stripHtml(textRecord.div);
+      return text ? [{ text, title }] : [];
+    }
+
+    const entryRecord =
+      Array.isArray(record.entry) && record.entry[0] ? asRecord(record.entry[0]) : null;
+    if (!entryRecord || typeof entryRecord.reference !== "string") {
+      return [];
+    }
+
+    const linkedResource = resourceByReference(resourceMap, entryRecord.reference);
+    if (!linkedResource) {
+      return [];
+    }
+
+    const text =
+      typeof linkedResource.valueString === "string"
+        ? linkedResource.valueString.trim()
+        : typeof linkedResource.description === "string"
+          ? linkedResource.description.trim()
+          : typeof linkedResource.summary === "string"
+            ? linkedResource.summary.trim()
+            : "";
+
+    return text ? [{ text, title }] : [];
+  });
+}
+
+function compositionSource(
+  resource: Record<string, unknown>,
+  entryFullUrl: string | undefined,
+) {
+  const sourceRecordId =
+    Array.isArray(resource.identifier) &&
+    resource.identifier[0] &&
+    typeof resource.identifier[0] === "object" &&
+    typeof resource.identifier[0].value === "string"
+      ? resource.identifier[0].value
+      : typeof resource.id === "string"
+        ? resource.id
+        : entryFullUrl ?? `composition-${Date.now()}`;
+
+  const sourceSystem =
+    Array.isArray(resource.identifier) &&
+    resource.identifier[0] &&
+    typeof resource.identifier[0] === "object" &&
+    typeof resource.identifier[0].system === "string"
+      ? resource.identifier[0].system
+      : "fhir-bundle";
+
+  return { sourceRecordId, sourceSystem };
+}
+
 async function resolveReferencedPatient(
   reference: string | undefined,
   patientMap: Map<string, number>,
@@ -326,43 +393,41 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       const objective = sectionText(resourceMap, sections, "objective");
       const assessment = sectionText(resourceMap, sections, "assessment");
       const plan = sectionText(resourceMap, sections, "plan");
+      const narrativeSections = sectionNarratives(resourceMap, sections);
+      const { sourceRecordId, sourceSystem } = compositionSource(resource, entry.fullUrl);
 
-      if (!subjective || !objective || !assessment || !plan) {
+      summary.processed += 1;
+      const isSoapComposition = subjective && objective && assessment && plan;
+      if (!isSoapComposition && !narrativeSections.length) {
         throw new Error(
-          "Composition import requires Subjective, Objective, Assessment, and Plan sections",
+          "Composition import requires either SOAP sections or at least one narrative section",
         );
       }
 
-      const sourceRecordId =
-        Array.isArray(resource.identifier) &&
-        resource.identifier[0] &&
-        typeof resource.identifier[0] === "object" &&
-        typeof resource.identifier[0].value === "string"
-          ? resource.identifier[0].value
-          : typeof resource.id === "string"
-            ? resource.id
-            : entry.fullUrl ?? `composition-${Date.now()}`;
-
-      const sourceSystem =
-        Array.isArray(resource.identifier) &&
-        resource.identifier[0] &&
-        typeof resource.identifier[0] === "object" &&
-        typeof resource.identifier[0].system === "string"
-          ? resource.identifier[0].system
-          : "fhir-bundle";
-
-      summary.processed += 1;
-      const created = await createSoapNote({
-        assessment,
-        authorUserId: importUser.id,
-        encounteredAt: encounterDate,
-        objective,
-        patientId,
-        plan,
-        sourceRecordId,
-        sourceSystem,
-        subjective,
-      });
+      const created = isSoapComposition
+        ? await createSoapNote({
+            assessment,
+            authorUserId: importUser.id,
+            encounteredAt: encounterDate,
+            objective,
+            patientId,
+            plan,
+            sourceRecordId,
+            sourceSystem,
+            subjective,
+          })
+        : await createNarrativeNote({
+            authorUserId: importUser.id,
+            encounteredAt: encounterDate,
+            patientId,
+            sections: narrativeSections,
+            sourceRecordId,
+            sourceSystem,
+            title:
+              typeof resource.title === "string" && resource.title.trim()
+                ? resource.title.trim()
+                : null,
+          });
 
       if (created) {
         summary.created += 1;

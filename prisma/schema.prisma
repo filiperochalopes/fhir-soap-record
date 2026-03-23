@@ -20,6 +20,7 @@ model Patient {
   appointments Appointment[]
   contacts     Contact[]
   soapNotes    SoapNote[]
+  narrativeNotes NarrativeNote[]
 }
 
 model Contact {
@@ -91,6 +92,7 @@ model AuthUser {
 
   tokens    AuthToken[]
   soapNotes SoapNote[]
+  narrativeNotes NarrativeNote[]
   auditLogs AuditLog[]
 
   @@unique([crm, crmUf])
@@ -131,6 +133,24 @@ model SoapNote {
   @@unique([sourceSystem, sourceRecordId])
 }
 
+model NarrativeNote {
+  id             Int      @id @default(autoincrement())
+  patientId      Int      @map("patient_id")
+  authorUserId   Int      @map("author_user_id")
+  encounteredAt  DateTime @map("encountered_at")
+  title          String?
+  sections       Json
+  sourceSystem   String?  @map("source_system")
+  sourceRecordId String?  @map("source_record_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  patient Patient  @relation(fields: [patientId], references: [id])
+  author  AuthUser @relation(fields: [authorUserId], references: [id])
+
+  @@unique([sourceSystem, sourceRecordId])
+}
+
 model AuditLog {
   id         Int      @id @default(autoincrement())
   category   String
@@ -143,4 +163,3 @@ model AuditLog {
   userId Int?      @map("user_id")
   user   AuthUser? @relation(fields: [userId], references: [id])
 }
-

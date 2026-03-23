@@ -7,7 +7,7 @@ The application is intentionally narrow:
 - token-based authentication
 - patient registry and editing
 - read-only agenda
-- SOAP note registration
+- SOAP and narrative note registration
 - FHIR-oriented API
 - FHIR Bundle import
 - Swagger/OpenAPI docs
@@ -163,7 +163,7 @@ With the default local configuration:
 The FHIR import endpoint accepts a focused subset of `Bundle` payloads for:
 
 - `Patient`
-- `Composition`
+- `Composition` for either SOAP or narrative clinical notes
 - referenced `Encounter`, `Observation`, `Condition`, and `ClinicalImpression` when needed to derive SOAP content
 
 For import, the `Patient` can include optional fields such as `identifier`, `telecom`, and `contact`.
@@ -173,6 +173,8 @@ For SOAP import, the `Composition` can provide the encounter date in either of t
 - directly in `Composition.date`
 - indirectly through `Encounter.period.start` referenced by `Composition.encounter`
 
+For narrative import, the `Composition` must carry at least one `section.text.div`. The app stores it as a narrative note and exposes it back through `Composition`.
+
 ## Feature Scope
 
 Implemented MVP screens:
@@ -181,7 +183,7 @@ Implemented MVP screens:
 - patient list with search
 - patient create/edit
 - read-only agenda based on `Appointment`
-- SOAP page with patient header and collapsed previous-records section
+- clinical registration page with SOAP and narrative note forms plus collapsed previous-records section
 
 Implemented API surface:
 
@@ -189,6 +191,7 @@ Implemented API surface:
 - patient FHIR routes
 - appointment FHIR routes
 - SOAP-derived FHIR routes through `Composition`, `Encounter`, `Observation`, `Condition`, and `ClinicalImpression`
+- narrative clinical notes exposed through `Composition`
 - `POST /fhir`
 - `GET /openapi.json`
 - `GET /docs`
