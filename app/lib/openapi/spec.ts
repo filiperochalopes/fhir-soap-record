@@ -258,6 +258,28 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                       },
                     },
                     {
+                      fullUrl: "urn:uuid:appointment-1",
+                      resource: {
+                        resourceType: "Appointment",
+                        id: "appointment-1",
+                        status: "booked",
+                        start: "2026-03-10T13:30:00Z",
+                        end: "2026-03-10T14:00:00Z",
+                        appointmentType: {
+                          text: "routine",
+                        },
+                        participant: [
+                          {
+                            actor: {
+                              reference: "urn:uuid:patient-1",
+                              display: "Maria de Souza",
+                            },
+                            status: "accepted",
+                          },
+                        ],
+                      },
+                    },
+                    {
                       fullUrl: "urn:uuid:encounter-1",
                       resource: {
                         resourceType: "Encounter",
@@ -308,6 +330,83 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
                   ],
                 },
                 examples: {
+                  withAppointmentHistory: {
+                    summary: "Bundle imports patient, appointment history, and SOAP note together",
+                    value: {
+                      resourceType: "Bundle",
+                      type: "transaction",
+                      entry: [
+                        {
+                          fullUrl: "urn:uuid:patient-1",
+                          resource: {
+                            resourceType: "Patient",
+                            id: "external-patient-1",
+                            name: [{ text: "Maria de Souza" }],
+                            gender: "female",
+                            birthDate: "1980-09-14",
+                          },
+                        },
+                        {
+                          resource: {
+                            resourceType: "Appointment",
+                            id: "appointment-1",
+                            status: "fulfilled",
+                            start: "2026-03-10T13:30:00Z",
+                            end: "2026-03-10T14:00:00Z",
+                            appointmentType: {
+                              text: "routine",
+                            },
+                            participant: [
+                              {
+                                actor: {
+                                  reference: "urn:uuid:patient-1",
+                                },
+                                status: "accepted",
+                              },
+                            ],
+                          },
+                        },
+                        {
+                          resource: {
+                            resourceType: "Composition",
+                            id: "soap-1",
+                            subject: { reference: "urn:uuid:patient-1" },
+                            date: "2026-03-10T14:30:00Z",
+                            section: [
+                              {
+                                title: "Subjective",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Headache for 2 days.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Objective",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Afebrile. BP 120/80.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Assessment",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Tension headache.</p></div>",
+                                },
+                              },
+                              {
+                                title: "Plan",
+                                text: {
+                                  status: "generated",
+                                  div: "<div><p>Hydration and analgesic guidance.</p></div>",
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
                   withCompositionDate: {
                     summary: "Composition carries the encounter date directly",
                     value: {

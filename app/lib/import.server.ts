@@ -190,6 +190,48 @@ function sectionText(
   return "";
 }
 
+function appointmentPatientReference(resource: Record<string, unknown>) {
+  if (!Array.isArray(resource.participant)) {
+    return undefined;
+  }
+
+  for (const participant of resource.participant) {
+    const participantRecord = asRecord(participant);
+    const actorRecord = asRecord(participantRecord?.actor);
+    if (actorRecord && typeof actorRecord.reference === "string") {
+      return actorRecord.reference;
+    }
+  }
+
+  return undefined;
+}
+
+function appointmentTypeText(resource: Record<string, unknown>) {
+  const appointmentType = asRecord(resource.appointmentType);
+  if (!appointmentType) {
+    return "";
+  }
+
+  if (typeof appointmentType.text === "string" && appointmentType.text.trim()) {
+    return appointmentType.text.trim();
+  }
+
+  const firstCoding =
+    Array.isArray(appointmentType.coding) && appointmentType.coding[0]
+      ? asRecord(appointmentType.coding[0])
+      : null;
+
+  if (firstCoding && typeof firstCoding.display === "string" && firstCoding.display.trim()) {
+    return firstCoding.display.trim();
+  }
+
+  if (firstCoding && typeof firstCoding.code === "string" && firstCoding.code.trim()) {
+    return firstCoding.code.trim();
+  }
+
+  return "";
+}
+
 function sectionNarratives(
   resourceMap: Map<string, Record<string, unknown>>,
   sections: unknown[],
@@ -279,6 +321,67 @@ async function resolveReferencedPatient(
   return null;
 }
 
+async function importAppointment(
+  resource: Record<string, unknown>,
+  patientId: number,
+) {
+  const start = typeof resource.start === "string" ? new Date(resource.start) : null;
+  const end = typeof resource.end === "string" ? new Date(resource.end) : null;
+  const status = typeof resource.status === "string" ? resource.status.trim() : "";
+  const appointmentType = appointmentTypeText(resource);
+
+  if (!start || Number.isNaN(start.getTime()) || !end || Number.isNaN(end.getTime())) {
+    throw new Error("Appointment requires valid start and end");
+  }
+
+  if (!status) {
+    throw new Error("Appointment requires status");
+  }
+
+  if (!appointmentType) {
+    throw new Error("Appointment requires appointmentType.text, coding.display, or coding.code");
+  }
+
+  const existing = await prisma.appointment.findFirst({
+    where: {
+      end,
+      patientId,
+      start,
+    },
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  if (!existing) {
+    await prisma.appointment.create({
+      data: {
+        appointmentType,
+        end,
+        patientId,
+        start,
+        status,
+      },
+    });
+
+    return "created" as const;
+  }
+
+  if (existing.status === status && existing.appointmentType === appointmentType) {
+    return "skipped" as const;
+  }
+
+  await prisma.appointment.update({
+    where: { id: existing.id },
+    data: {
+      appointmentType,
+      status,
+    },
+  });
+
+  return "updated" as const;
+}
+
 export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) {
   const summary = emptySummary();
   const importUser = await ensureImportUser();
@@ -343,6 +446,34 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       summary.errors.push({
         item: "Patient",
         message: error instanceof Error ? error.message : "Unexpected patient import error",
+      });
+    }
+  }
+
+  for (const entry of payload.entry) {
+    const resource = entry.resource;
+    if (resource.resourceType !== "Appointment") {
+      continue;
+    }
+
+    try {
+      const patientId = await resolveReferencedPatient(
+        appointmentPatientReference(resource),
+        patientMap,
+      );
+
+      if (!patientId) {
+        throw new Error("Appointment participant.actor.reference must resolve to a patient");
+      }
+
+      summary.processed += 1;
+      const appointmentResult = await importAppointment(resource, patientId);
+      summary[appointmentResult] += 1;
+    } catch (error) {
+      summary.errors.push({
+        item: "Appointment",
+        message:
+          error instanceof Error ? error.message : "Unexpected appointment import error",
       });
     }
   }

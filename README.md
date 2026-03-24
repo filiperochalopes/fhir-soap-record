@@ -163,6 +163,7 @@ With the default local configuration:
 The FHIR import endpoint accepts a focused subset of `Bundle` payloads for:
 
 - `Patient`
+- `Appointment`
 - `Composition` for either SOAP or narrative clinical notes
 - referenced `Encounter`, `Observation`, `Condition`, and `ClinicalImpression` when needed to derive SOAP content
 
