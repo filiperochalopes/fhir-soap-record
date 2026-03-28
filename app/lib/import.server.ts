@@ -190,6 +190,13 @@ function sectionText(
   return "";
 }
 
+function hasSection(sections: unknown[], title: string) {
+  return sections.some((section) => {
+    const record = asRecord(section);
+    return typeof record?.title === "string" && record.title.toLowerCase() === title;
+  });
+}
+
 function appointmentPatientReference(resource: Record<string, unknown>) {
   if (!Array.isArray(resource.participant)) {
     return undefined;
@@ -528,7 +535,11 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       const { sourceRecordId, sourceSystem } = compositionSource(resource, entry.fullUrl);
 
       summary.processed += 1;
-      const isSoapComposition = subjective && objective && assessment && plan;
+      const isSoapComposition =
+        hasSection(sections, "subjective") &&
+        hasSection(sections, "objective") &&
+        hasSection(sections, "assessment") &&
+        hasSection(sections, "plan");
       if (!isSoapComposition && !narrativeSections.length) {
         throw new Error(
           "Composition import requires either SOAP sections or at least one narrative section",
