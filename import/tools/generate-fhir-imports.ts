@@ -46,6 +46,17 @@ type LegacyDbExport = {
   patients: LegacyPatient[];
 };
 
+type AuditBlockReference = {
+  heading: string;
+  startLine: number;
+  topLevelDate: string | null;
+};
+
+type ImportPatient = LegacyPatient & {
+  source: "db" | "synthetic";
+  syntheticAuditBlocks?: AuditBlockReference[];
+};
+
 type ParsedHeading = {
   birthDate: string | null;
   displayName: string;
@@ -101,7 +112,8 @@ type DocumentPageExtraction = {
 
 type MatchCandidate = {
   birthDateMatched: boolean;
-  patient: LegacyPatient;
+  completenessScore: number;
+  patient: ImportPatient;
   score: number;
 };
 
@@ -463,16 +475,69 @@ function parseMarkdownBlocks(markdown: string) {
 
 type InternalPatientRecord = {
   normalizedName: string;
-  patient: LegacyPatient;
+  patient: ImportPatient;
   tokens: string[];
 };
 
-function buildPatientIndex(patients: LegacyPatient[]): InternalPatientRecord[] {
+function toImportPatient(patient: LegacyPatient): ImportPatient {
+  return {
+    ...patient,
+    source: "db",
+  };
+}
+
+function buildPatientIndex(patients: ImportPatient[]): InternalPatientRecord[] {
   return patients.map((patient) => ({
     normalizedName: normalizeNameForMatch(patient.name),
     patient,
     tokens: tokenizeName(patient.name),
   }));
+}
+
+function patientCompletenessScore(patient: ImportPatient) {
+  return (
+    patient.identifiers.length * 5 +
+    patient.contactPoints.length * 3 +
+    patient.contacts.length * 2 +
+    patient.appointments.length * 2 +
+    (patient.gender !== "unknown" ? 1 : 0) +
+    (patient.source === "db" ? 1 : 0)
+  );
+}
+
+function scorePatientCandidate(
+  normalizedHint: string,
+  hintTokens: string[],
+  birthDateHint: string | null,
+  record: InternalPatientRecord,
+) {
+  const distance = levenshteinDistance(normalizedHint, record.normalizedName);
+  const maxLength = Math.max(normalizedHint.length, record.normalizedName.length, 1);
+  const editScore = 1 - distance / maxLength;
+  const diceScore = diceCoefficient(normalizedHint, record.normalizedName);
+  const tokenScore = tokenSimilarity(hintTokens, record.tokens);
+  const containsScore =
+    normalizedHint && record.normalizedName.includes(normalizedHint)
+      ? 1
+      : record.normalizedName && normalizedHint.includes(record.normalizedName)
+        ? 1
+        : 0;
+  const birthDateMatched = Boolean(birthDateHint && record.patient.birthDate === birthDateHint);
+  const score = Math.min(
+    1,
+    editScore * 0.35 +
+      diceScore * 0.3 +
+      tokenScore * 0.25 +
+      containsScore * 0.1 +
+      (birthDateMatched ? 0.2 : 0),
+  );
+
+  return {
+    birthDateMatched,
+    completenessScore: patientCompletenessScore(record.patient),
+    patient: record.patient,
+    score,
+  };
 }
 
 function levenshteinDistance(left: string, right: string) {
@@ -562,50 +627,94 @@ function matchPatientByName(
   const hintTokens = tokenizeName(nameHint);
 
   const candidates = patientIndex
-    .map((record) => {
-      const distance = levenshteinDistance(normalizedHint, record.normalizedName);
-      const maxLength = Math.max(normalizedHint.length, record.normalizedName.length, 1);
-      const editScore = 1 - distance / maxLength;
-      const diceScore = diceCoefficient(normalizedHint, record.normalizedName);
-      const tokenScore = tokenSimilarity(hintTokens, record.tokens);
-      const containsScore =
-        normalizedHint && record.normalizedName.includes(normalizedHint)
-          ? 1
-          : record.normalizedName && normalizedHint.includes(record.normalizedName)
-            ? 1
-            : 0;
-      const birthDateMatched = Boolean(
-        birthDateHint && record.patient.birthDate === birthDateHint,
-      );
-      const score = Math.min(
-        1,
-        editScore * 0.35 +
-          diceScore * 0.3 +
-          tokenScore * 0.25 +
-          containsScore * 0.1 +
-          (birthDateMatched ? 0.2 : 0),
-      );
+    .map((record) => scorePatientCandidate(normalizedHint, hintTokens, birthDateHint, record))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
 
-      return {
-        birthDateMatched,
-        patient: record.patient,
-        score,
-      };
+      if (right.completenessScore !== left.completenessScore) {
+        return right.completenessScore - left.completenessScore;
+      }
+
+      return right.patient.id - left.patient.id;
     })
-    .sort((left, right) => right.score - left.score)
     .slice(0, 5);
 
   const best = candidates[0];
   const second = candidates[1];
+  const sameNameAndBirthDateAsSecond =
+    Boolean(best && second) &&
+    normalizeNameForMatch(best.patient.name) === normalizeNameForMatch(second.patient.name) &&
+    best.patient.birthDate === second.patient.birthDate;
+  const completenessBreaksTie =
+    sameNameAndBirthDateAsSecond &&
+    Boolean(best && second) &&
+    best.completenessScore > second.completenessScore;
   const accepted =
     Boolean(best) &&
     best.score >= 0.8 &&
-    (!second || best.score - second.score >= 0.05 || best.birthDateMatched);
+    (!second ||
+      best.score - second.score >= 0.05 ||
+      best.birthDateMatched ||
+      completenessBreaksTie);
 
   return {
     accepted,
     candidates,
   };
+}
+
+function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
+  const syntheticPatients: ImportPatient[] = [];
+  let nextSyntheticId = -1;
+
+  for (const block of blocks) {
+    if (block.match.accepted || !block.heading.birthDate || !block.heading.displayName) {
+      continue;
+    }
+
+    const syntheticIndex = buildPatientIndex(syntheticPatients);
+    const normalizedHint = normalizeNameForMatch(block.heading.displayName);
+    const hintTokens = tokenizeName(block.heading.displayName);
+    const best = syntheticIndex
+      .map((record) =>
+        scorePatientCandidate(normalizedHint, hintTokens, block.heading.birthDate, record),
+      )
+      .sort((left, right) => right.score - left.score)[0];
+
+    const auditBlock: AuditBlockReference = {
+      heading: block.heading.raw,
+      startLine: block.startLine,
+      topLevelDate: block.topLevelDate,
+    };
+
+    if (best && best.birthDateMatched && best.score >= 0.75) {
+      if (!best.patient.syntheticAuditBlocks) {
+        best.patient.syntheticAuditBlocks = [];
+      }
+      best.patient.syntheticAuditBlocks.push(auditBlock);
+      continue;
+    }
+
+    syntheticPatients.push({
+      appointments: [],
+      birthDate: block.heading.birthDate,
+      contactPoints: [],
+      contacts: [],
+      createdAt: new Date().toISOString(),
+      gender: "unknown",
+      id: nextSyntheticId,
+      identifiers: [],
+      name: block.heading.displayName.trim(),
+      source: "synthetic",
+      syntheticAuditBlocks: [auditBlock],
+      updatedAt: new Date().toISOString(),
+    });
+    nextSyntheticId -= 1;
+  }
+
+  return syntheticPatients;
 }
 
 function detectEncounterMarker(line: string) {
@@ -1151,7 +1260,13 @@ async function extractDocumentPageWithLm(
   return result;
 }
 
-function buildPatientResource(patient: LegacyPatient, patientReferenceId: string) {
+function bundlePatientResourceId(patient: ImportPatient) {
+  return patient.source === "synthetic"
+    ? `synthetic-patient-${Math.abs(patient.id)}`
+    : `legacy-patient-${patient.id}`;
+}
+
+function buildPatientResource(patient: ImportPatient, patientReferenceId: string) {
   return {
     resourceType: "Patient",
     id: patientReferenceId,
@@ -1174,10 +1289,20 @@ function buildPatientResource(patient: LegacyPatient, patientReferenceId: string
       name: { text: contact.name },
       relationship: [{ text: contact.relationship }],
     })),
+    ...(patient.source === "synthetic"
+      ? {
+          extension: [
+            {
+              url: "https://fhir-soap-record.example/synthetic-patient",
+              valueBoolean: true,
+            },
+          ],
+        }
+      : {}),
   };
 }
 
-function buildAppointmentResources(patient: LegacyPatient, patientReference: string) {
+function buildAppointmentResources(patient: ImportPatient, patientReference: string) {
   return patient.appointments
     .slice()
     .sort((left, right) => left.start.localeCompare(right.start))
@@ -1203,7 +1328,7 @@ function buildAppointmentResources(patient: LegacyPatient, patientReference: str
 }
 
 function buildSoapComposition(
-  patient: LegacyPatient,
+  patient: ImportPatient,
   patientReference: string,
   encounter: MarkdownEncounter,
   soap: StructuredSoap,
@@ -1313,7 +1438,7 @@ function buildDocumentNarrativeText(documents: MatchedDocumentPage[]) {
 }
 
 function buildDocumentComposition(
-  patient: LegacyPatient,
+  patient: ImportPatient,
   patientReference: string,
   documents: MatchedDocumentPage[],
   latestEncounterIso: string,
@@ -1364,7 +1489,7 @@ function buildDocumentComposition(
 }
 
 function latestEncounterDateIso(
-  patient: LegacyPatient,
+  patient: ImportPatient,
   soapEncounters: Array<{ encounter: MarkdownEncounter }>,
   documents: MatchedDocumentPage[],
 ) {
@@ -1401,11 +1526,11 @@ function latestEncounterDateIso(
 }
 
 function buildBundle(
-  patient: LegacyPatient,
+  patient: ImportPatient,
   soapEntries: Array<{ encounter: MarkdownEncounter; soap: StructuredSoap }>,
   documents: MatchedDocumentPage[],
 ) {
-  const patientId = `legacy-patient-${patient.id}`;
+  const patientId = bundlePatientResourceId(patient);
   const patientReference = `Patient/${patientId}`;
   const patientFullUrl = `urn:uuid:${patientId}`;
 
@@ -1494,9 +1619,21 @@ async function main() {
 
   const dbExport = await readJsonFile<LegacyDbExport>(DB_JSON_PATH);
   const markdown = await readFile(MARKDOWN_PATH, "utf8");
-  const patientIndex = buildPatientIndex(dbExport.patients);
+  const databasePatients = dbExport.patients.map(toImportPatient);
+  const databasePatientIndex = buildPatientIndex(databasePatients);
   const markdownBlocks = parseMarkdownBlocks(markdown);
 
+  const initiallyMatchedBlocks: MatchedMarkdownBlock[] = markdownBlocks.map((block) => ({
+    ...block,
+    match: matchPatientByName(
+      block.heading.displayName,
+      block.heading.birthDate,
+      databasePatientIndex,
+    ),
+  }));
+  const syntheticPatients = createSyntheticPatientsFromMarkdown(initiallyMatchedBlocks);
+  const allPatients = [...databasePatients, ...syntheticPatients];
+  const patientIndex = buildPatientIndex(allPatients);
   const matchedBlocks: MatchedMarkdownBlock[] = markdownBlocks.map((block) => ({
     ...block,
     match: matchPatientByName(block.heading.displayName, block.heading.birthDate, patientIndex),
@@ -1521,9 +1658,11 @@ async function main() {
     .map((block) => ({
       birthDate: block.heading.birthDate,
       candidates: block.match.candidates.map((candidate) => ({
+        completenessScore: candidate.completenessScore,
         patientBirthDate: candidate.patient.birthDate,
         patientName: candidate.patient.name,
         score: Number(candidate.score.toFixed(4)),
+        source: candidate.patient.source,
       })),
       heading: block.heading.raw,
       startLine: block.startLine,
@@ -1589,9 +1728,11 @@ async function main() {
     .filter((page) => !page.match.accepted)
     .map((page) => ({
       candidates: page.match.candidates.map((candidate) => ({
+        completenessScore: candidate.completenessScore,
         patientBirthDate: candidate.patient.birthDate,
         patientName: candidate.patient.name,
         score: Number(candidate.score.toFixed(4)),
+        source: candidate.patient.source,
       })),
       confidence: Number(page.extraction.confidence.toFixed(4)),
       documentType: page.extraction.documentType,
@@ -1614,6 +1755,12 @@ async function main() {
     });
 
   const reviewReport = {
+    createdMinimalPatients: syntheticPatients.map((patient) => ({
+      birthDate: patient.birthDate,
+      patientId: patient.id,
+      patientName: patient.name,
+      sourceBlocks: patient.syntheticAuditBlocks ?? [],
+    })),
     generatedAt: new Date().toISOString(),
     markdownBlocksParsed: markdownBlocks.length,
     unresolvedDocumentPages,
@@ -1621,7 +1768,7 @@ async function main() {
   };
   await writeJsonFile(path.join(OUT_DIR, "_review.json"), reviewReport);
 
-  const filteredPatients = dbExport.patients.filter((patient) => {
+  const filteredPatients = allPatients.filter((patient) => {
     if (!options.patientFilter) {
       return true;
     }
@@ -1655,6 +1802,7 @@ async function main() {
     JSON.stringify(
       {
         bundlesGenerated,
+        createdMinimalPatients: syntheticPatients.length,
         lmEnabled,
         ocrPages: ocrCache?.pages.length || 0,
         ocrEnabled,
