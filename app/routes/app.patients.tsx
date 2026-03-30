@@ -74,9 +74,16 @@ export default function PatientsRoute() {
             <article className="panel p-5" key={patient.id}>
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-2">
-                  <h3 className="text-xl font-semibold">{patient.name}</h3>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="text-xl font-semibold">{patient.name}</h3>
+                    {patient.isDraft ? (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+                        Draft
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
-                    <span>{formatDate(patient.birthDate)}</span>
+                    <span>{patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}</span>
                     <span className="uppercase">{patient.gender}</span>
                     {patient.identifier[0] ? (
                       <span>

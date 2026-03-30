@@ -33,7 +33,7 @@ type LegacyPatient = {
   id: number;
   name: string;
   gender: string;
-  birthDate: string;
+  birthDate: string | null;
   createdAt: string;
   updatedAt: string;
   identifiers: LegacyIdentifier[];
@@ -53,6 +53,7 @@ type AuditBlockReference = {
 };
 
 type ImportPatient = LegacyPatient & {
+  isDraft: boolean;
   source: "db" | "synthetic";
   syntheticAuditBlocks?: AuditBlockReference[];
 };
@@ -482,6 +483,7 @@ type InternalPatientRecord = {
 function toImportPatient(patient: LegacyPatient): ImportPatient {
   return {
     ...patient,
+    isDraft: !patient.birthDate,
     source: "db",
   };
 }
@@ -501,6 +503,8 @@ function patientCompletenessScore(patient: ImportPatient) {
     patient.contacts.length * 2 +
     patient.appointments.length * 2 +
     (patient.gender !== "unknown" ? 1 : 0) +
+    (patient.birthDate ? 2 : 0) +
+    (!patient.isDraft ? 1 : 0) +
     (patient.source === "db" ? 1 : 0)
   );
 }
@@ -670,7 +674,7 @@ function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
   let nextSyntheticId = -1;
 
   for (const block of blocks) {
-    if (block.match.accepted || !block.heading.birthDate || !block.heading.displayName) {
+    if (block.match.accepted || !block.heading.displayName) {
       continue;
     }
 
@@ -689,7 +693,11 @@ function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
       topLevelDate: block.topLevelDate,
     };
 
-    if (best && best.birthDateMatched && best.score >= 0.75) {
+    const canReuseExistingSynthetic = block.heading.birthDate
+      ? best && best.birthDateMatched && best.score >= 0.75
+      : best && best.score >= 0.9;
+
+    if (canReuseExistingSynthetic && best) {
       if (!best.patient.syntheticAuditBlocks) {
         best.patient.syntheticAuditBlocks = [];
       }
@@ -706,6 +714,7 @@ function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
       gender: "unknown",
       id: nextSyntheticId,
       identifiers: [],
+      isDraft: !block.heading.birthDate,
       name: block.heading.displayName.trim(),
       source: "synthetic",
       syntheticAuditBlocks: [auditBlock],
@@ -1280,7 +1289,7 @@ function buildPatientResource(patient: ImportPatient, patientReferenceId: string
       },
     ],
     gender: patient.gender,
-    birthDate: patient.birthDate,
+    ...(patient.birthDate ? { birthDate: patient.birthDate } : {}),
     telecom: patient.contactPoints.map((telecom) => ({
       system: telecom.system,
       value: telecom.value,
@@ -1289,11 +1298,11 @@ function buildPatientResource(patient: ImportPatient, patientReferenceId: string
       name: { text: contact.name },
       relationship: [{ text: contact.relationship }],
     })),
-    ...(patient.source === "synthetic"
+    ...(patient.isDraft
       ? {
           extension: [
             {
-              url: "https://fhir-soap-record.example/synthetic-patient",
+              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
               valueBoolean: true,
             },
           ],
@@ -1522,7 +1531,9 @@ function latestEncounterDateIso(
     return buildIsoDateTime(latestDocument.extraction.issueDate, null);
   }
 
-  return buildIsoDateTime(patient.birthDate, null);
+  return patient.birthDate
+    ? buildIsoDateTime(patient.birthDate, null)
+    : new Date(patient.updatedAt || patient.createdAt).toISOString();
 }
 
 function buildBundle(
@@ -1754,13 +1765,17 @@ async function main() {
       patientDocumentEntries.get(patientId)?.push(page);
     });
 
+  const createdMinimalPatients = syntheticPatients.map((patient) => ({
+    birthDate: patient.birthDate,
+    isDraft: patient.isDraft,
+    patientId: patient.id,
+    patientName: patient.name,
+    sourceBlocks: patient.syntheticAuditBlocks ?? [],
+  }));
+
   const reviewReport = {
-    createdMinimalPatients: syntheticPatients.map((patient) => ({
-      birthDate: patient.birthDate,
-      patientId: patient.id,
-      patientName: patient.name,
-      sourceBlocks: patient.syntheticAuditBlocks ?? [],
-    })),
+    createdDraftPatients: createdMinimalPatients.filter((patient) => patient.isDraft),
+    createdMinimalPatients,
     generatedAt: new Date().toISOString(),
     markdownBlocksParsed: markdownBlocks.length,
     unresolvedDocumentPages,
@@ -1789,7 +1804,7 @@ async function main() {
       patientDocumentEntries.get(patient.id) || [],
     );
 
-    const birthDateFilename = patient.birthDate.replace(/-/g, "_");
+    const birthDateFilename = (patient.birthDate || "draft").replace(/-/g, "_");
     const filename = `${sanitizeFilename(patient.name)}_${birthDateFilename}.json`;
     await writeJsonFile(path.join(OUT_DIR, filename), bundle);
     bundlesGenerated += 1;
@@ -1802,6 +1817,7 @@ async function main() {
     JSON.stringify(
       {
         bundlesGenerated,
+        createdDraftPatients: syntheticPatients.filter((patient) => patient.isDraft).length,
         createdMinimalPatients: syntheticPatients.length,
         lmEnabled,
         ocrPages: ocrCache?.pages.length || 0,

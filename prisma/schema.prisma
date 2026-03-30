@@ -11,7 +11,8 @@ model Patient {
   id        Int      @id @default(autoincrement())
   name      String
   gender    String
-  birthDate DateTime @map("birth_date") @db.Date
+  birthDate DateTime? @map("birth_date") @db.Date
+  isDraft   Boolean  @default(false) @map("is_draft")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 

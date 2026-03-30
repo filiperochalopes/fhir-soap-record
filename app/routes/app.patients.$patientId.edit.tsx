@@ -41,6 +41,7 @@ export async function loader({
       relationship: contact.relationship,
     })),
     gender: patient.gender.toLowerCase(),
+    isDraft: patient.isDraft,
     identifiers: patient.identifier.map((identifier) => ({
       left: identifier.system,
       right: identifier.value,
@@ -97,7 +98,14 @@ export default function EditPatientRoute() {
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
             Patient edit
           </p>
-          <h2 className="mt-2 text-3xl font-semibold">{patient.name}</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h2 className="text-3xl font-semibold">{patient.name}</h2>
+            {patient.isDraft ? (
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                Draft
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link className="button-secondary" to="/patients">
@@ -113,6 +121,12 @@ export default function EditPatientRoute() {
           {actionData.error}
         </p>
       ) : null}
+      {patient.isDraft ? (
+        <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
+          This patient is pending registration completion. Fill the missing fields and uncheck
+          `Draft` when the record is complete.
+        </p>
+      ) : null}
       <Form className="mt-8 space-y-8" method="post">
         <PatientFormEditor initialValues={formValues} />
         <div className="flex justify-end">
@@ -124,4 +138,3 @@ export default function EditPatientRoute() {
     </section>
   );
 }
-

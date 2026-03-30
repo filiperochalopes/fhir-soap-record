@@ -136,9 +136,16 @@ export default function SoapRoute() {
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
               Clinical registration
             </p>
-            <h2 className="mt-2 text-3xl font-semibold">{patient.name}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-semibold">{patient.name}</h2>
+              {patient.isDraft ? (
+                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                  Draft
+                </span>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
-              <span>{formatDate(patient.birthDate)}</span>
+              <span>{patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}</span>
               <span className="uppercase">{patient.gender}</span>
               {patient.identifier[0] ? (
                 <span>
@@ -157,6 +164,12 @@ export default function SoapRoute() {
           </div>
         </div>
       </section>
+      {patient.isDraft ? (
+        <p className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
+          This patient is still marked as draft. Complete the registration when the missing data
+          becomes available.
+        </p>
+      ) : null}
 
       <ClinicalHistory notes={previousNotes} />
 

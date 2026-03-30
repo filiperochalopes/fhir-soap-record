@@ -13,6 +13,7 @@ const emptyValues: PatientFormValues = {
   birthDate: "",
   contacts: [{ name: "", relationship: "" }],
   gender: "female",
+  isDraft: false,
   identifiers: [{ left: "", right: "" }],
   name: "",
   telecom: [{ left: "", right: "" }],
@@ -75,4 +76,3 @@ export default function NewPatientRoute() {
     </section>
   );
 }
-

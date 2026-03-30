@@ -37,7 +37,11 @@ export function endOfDay(value: Date) {
   return date;
 }
 
-export function toDateInputValue(value: Date | string) {
+export function toDateInputValue(value: Date | string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
   return new Date(value).toISOString().slice(0, 10);
 }
 

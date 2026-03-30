@@ -14,6 +14,7 @@ export type PatientFormValues = {
   birthDate: string;
   contacts: ContactItem[];
   gender: string;
+  isDraft: boolean;
   identifiers: PairItem[];
   name: string;
   telecom: PairItem[];
@@ -123,6 +124,7 @@ function ContactRows(props: {
 }
 
 export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
+  const [isDraft, setIsDraft] = useState<boolean>(props.initialValues.isDraft);
   const [identifiers, setIdentifiers] = useState<PairItem[]>(
     props.initialValues.identifiers.length ? props.initialValues.identifiers : [{ left: "", right: "" }],
   );
@@ -144,7 +146,12 @@ export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
         </label>
         <label className="block">
           <span className="field-label">Birth date</span>
-          <input defaultValue={props.initialValues.birthDate} name="birthDate" required type="date" />
+          <input
+            defaultValue={props.initialValues.birthDate}
+            name="birthDate"
+            required={!isDraft}
+            type="date"
+          />
         </label>
         <label className="block md:col-span-2">
           <span className="field-label">Gender</span>
@@ -154,6 +161,21 @@ export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
             <option value="other">Other</option>
             <option value="unknown">Unknown</option>
           </select>
+        </label>
+        <label className="block md:col-span-2">
+          <span className="field-label">Draft</span>
+          <div className="mt-2 flex items-start gap-3 rounded-2xl border border-black/10 px-4 py-3">
+            <input
+              defaultChecked={props.initialValues.isDraft}
+              name="isDraft"
+              type="checkbox"
+              onChange={(event) => setIsDraft(event.target.checked)}
+            />
+            <div className="space-y-1 text-sm text-[color:var(--muted)]">
+              <p>Mark as pending when the patient still has incomplete registration data.</p>
+              <p>Use this when the birth date is still unknown and must be completed later.</p>
+            </div>
+          </div>
         </label>
       </div>
 
@@ -201,4 +223,3 @@ export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
     </div>
   );
 }
-

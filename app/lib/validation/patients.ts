@@ -24,12 +24,21 @@ const contactSchema = z.object({
 export const genderSchema = z.enum(["male", "female", "other", "unknown"]);
 
 export const patientInputSchema = z.object({
-  birthDate: z.coerce.date(),
+  birthDate: z.date().nullable(),
   contacts: z.array(contactSchema),
   gender: genderSchema,
+  isDraft: z.boolean().default(false),
   identifiers: z.array(identifierSchema),
   name: z.string().trim().min(3, "Name is required"),
   telecom: z.array(telecomSchema),
+}).superRefine((value, ctx) => {
+  if (!value.birthDate && !value.isDraft) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Birth date is required unless the patient is marked as draft.",
+      path: ["birthDate"],
+    });
+  }
 });
 
 export type PatientInput = z.infer<typeof patientInputSchema>;
@@ -59,9 +68,12 @@ export function parsePatientForm(formData: FormData) {
   );
 
   return patientInputSchema.parse({
-    birthDate: parseDateInput(pickFirstString(formData.get("birthDate"))),
+    birthDate: pickFirstString(formData.get("birthDate"))
+      ? parseDateInput(pickFirstString(formData.get("birthDate")))
+      : null,
     contacts,
     gender: pickFirstString(formData.get("gender")),
+    isDraft: formData.get("isDraft") === "on",
     identifiers,
     name: pickFirstString(formData.get("name")),
     telecom,
@@ -73,10 +85,11 @@ export const patientSearchSchema = z.object({
 });
 
 export const patientImportSchema = z.object({
-  birthDate: z.coerce.date(),
+  birthDate: z.date().nullable().default(null),
   contacts: z.array(contactSchema).default([]),
   externalId: z.string().trim().optional(),
   gender: genderSchema,
+  isDraft: z.boolean().default(false),
   identifiers: z.array(identifierSchema).default([]),
   name: z.string().trim().min(3),
   soapNotes: z
@@ -92,5 +105,12 @@ export const patientImportSchema = z.object({
     )
     .default([]),
   telecom: z.array(telecomSchema).default([]),
+}).superRefine((value, ctx) => {
+  if (!value.birthDate && !value.isDraft) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Imported patient requires birthDate unless flagged as draft.",
+      path: ["birthDate"],
+    });
+  }
 });
-

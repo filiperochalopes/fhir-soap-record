@@ -37,6 +37,21 @@ function normalizeGender(value: unknown): "female" | "male" | "other" | "unknown
     : "unknown";
 }
 
+function patientDraftFlag(resource: Record<string, unknown>) {
+  if (!Array.isArray(resource.extension)) {
+    return false;
+  }
+
+  return resource.extension.some((item) => {
+    const record = asRecord(item);
+    return (
+      record?.url ===
+        "https://fhir-soap-record.example/StructureDefinition/patient-draft" &&
+      record.valueBoolean === true
+    );
+  });
+}
+
 function primaryName(resource: Record<string, unknown>) {
   const name = Array.isArray(resource.name) ? resource.name[0] : undefined;
   const nameRecord = asRecord(name);
@@ -421,10 +436,11 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       const birthDate =
         typeof resource.birthDate === "string"
           ? new Date(`${resource.birthDate}T00:00:00.000Z`)
-          : undefined;
+          : null;
+      const isDraft = patientDraftFlag(resource) || !birthDate;
 
-      if (!name || !birthDate) {
-        throw new Error("FHIR Patient requires name and birthDate for this MVP import");
+      if (!name || (!birthDate && !isDraft)) {
+        throw new Error("FHIR Patient requires name and birthDate unless marked as draft");
       }
 
       summary.processed += 1;
@@ -435,6 +451,7 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
           contacts: parseContactArray(resource),
           externalId: typeof resource.id === "string" ? resource.id : undefined,
           gender: normalizeGender(resource.gender),
+          isDraft,
           identifiers: parseIdentifierArray(resource),
           name,
           telecom: parseTelecomArray(resource),

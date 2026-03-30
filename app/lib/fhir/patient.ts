@@ -25,7 +25,21 @@ export function toFhirPatient(patient: PatientWithRelations) {
     })),
     name: [{ text: patient.name }],
     gender: normalizeGender(patient.gender),
-    birthDate: patient.birthDate.toISOString().slice(0, 10),
+    ...(patient.birthDate
+      ? {
+          birthDate: patient.birthDate.toISOString().slice(0, 10),
+        }
+      : {}),
+    ...(patient.isDraft
+      ? {
+          extension: [
+            {
+              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
+              valueBoolean: true,
+            },
+          ],
+        }
+      : {}),
     telecom: patient.telecom.map((contactPoint) => ({
       system: contactPoint.system,
       value: contactPoint.value,
@@ -36,4 +50,3 @@ export function toFhirPatient(patient: PatientWithRelations) {
     })),
   };
 }
-

@@ -14,6 +14,7 @@ function patientNestedWrite(input: PatientInput) {
       })),
     },
     gender: input.gender,
+    isDraft: input.isDraft || !input.birthDate,
     identifier: {
       create: input.identifiers.map((identifier) => ({
         system: identifier.system,
@@ -42,6 +43,7 @@ export async function savePatient(input: PatientInput, actorUserId: number, pati
               create: input.contacts,
             },
             gender: input.gender,
+            isDraft: input.isDraft || !input.birthDate,
             identifier: {
               deleteMany: {},
               create: input.identifiers,
@@ -83,9 +85,10 @@ export async function savePatient(input: PatientInput, actorUserId: number, pati
 }
 
 export async function findPatientForImport(args: {
-  birthDate: Date;
+  birthDate: Date | null;
   externalId?: string;
   identifiers: Array<{ system: string; value: string }>;
+  isDraft: boolean;
   name: string;
   sourceSystem: string;
 }) {
@@ -124,8 +127,13 @@ export async function findPatientForImport(args: {
   return prisma.patient.findFirst({
     where: {
       birthDate: args.birthDate,
+      ...(args.birthDate ? {} : { isDraft: args.isDraft }),
       name: args.name,
     },
+    orderBy: [
+      { isDraft: "asc" },
+      { updatedAt: "desc" },
+    ],
   });
 }
 
@@ -143,6 +151,7 @@ export async function upsertImportedPatient(args: {
     birthDate: args.input.birthDate,
     externalId: args.input.externalId,
     identifiers: args.input.identifiers,
+    isDraft: args.input.isDraft || !args.input.birthDate,
     name: args.input.name,
     sourceSystem: args.sourceSystem,
   });
@@ -162,6 +171,7 @@ export async function upsertImportedPatient(args: {
           create: args.input.contacts,
         },
         gender: args.input.gender,
+        isDraft: args.input.isDraft || !args.input.birthDate,
         identifier: {
           create: identifiers,
         },
@@ -191,8 +201,9 @@ export async function upsertImportedPatient(args: {
   const updated = await prisma.patient.update({
     where: { id: existing.id },
     data: {
-      birthDate: args.input.birthDate,
+      birthDate: args.input.birthDate ?? undefined,
       gender: args.input.gender,
+      isDraft: args.input.birthDate ? args.input.isDraft : existing.isDraft,
       name: args.input.name,
       identifier: identifiers.length
         ? {
@@ -228,4 +239,3 @@ export async function upsertImportedPatient(args: {
 
   return { patient: updated, status: "updated" as const };
 }
-
