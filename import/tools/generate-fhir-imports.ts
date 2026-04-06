@@ -56,6 +56,8 @@ type ImportPatient = LegacyPatient & {
   isDraft: boolean;
   source: "db" | "synthetic";
   syntheticAuditBlocks?: AuditBlockReference[];
+  syntheticAuditPages?: number[];
+  syntheticCreatedBy?: "manual_review" | "markdown_auto";
 };
 
 type ParsedHeading = {
@@ -162,15 +164,53 @@ type FhirBundle = {
   type: "transaction";
 };
 
+type ManualDecisionAction = "create_synthetic" | "match_existing" | "skip";
+
+type ManualDecisionRecord = {
+  action: ManualDecisionAction;
+  patientBirthDate?: string | null;
+  patientId?: number;
+  patientName?: string;
+  updatedAt: string;
+};
+
+type ManualSyntheticPatientRecord = {
+  birthDate: string | null;
+  createdAt: string;
+  id: number;
+  isDraft: boolean;
+  name: string;
+  sourceBlocks?: AuditBlockReference[];
+  sourcePages?: number[];
+  updatedAt: string;
+};
+
+type ManualDecisions = {
+  createdAt: string;
+  documentIdentities: Record<string, ManualDecisionRecord>;
+  documentPages: Record<string, ManualDecisionRecord>;
+  markdownIdentities: Record<string, ManualDecisionRecord>;
+  markdownBlocks: Record<string, ManualDecisionRecord>;
+  patientNameOverrides: Record<string, { name: string; updatedAt: string }>;
+  syntheticPatients: ManualSyntheticPatientRecord[];
+  updatedAt: string;
+};
+
+type ManualPatientResolution =
+  | { patient: ImportPatient; type: "patient" }
+  | { type: "skip" }
+  | null;
+
 const IMPORT_DIR = path.resolve(process.cwd(), "import");
 const CACHE_DIR = path.join(IMPORT_DIR, "cache");
 const OUT_DIR = path.join(IMPORT_DIR, "out");
 const DB_JSON_PATH = path.join(IMPORT_DIR, "db_patients.json");
-const MARKDOWN_PATH = path.join(IMPORT_DIR, "Clinica Cuidar - Registro.md");
+const MARKDOWN_PATH = path.join(IMPORT_DIR, "Prontuario_Docs.md");
 const DOCUMENTS_PDF_PATH = path.join(IMPORT_DIR, "Documentos_Medicos.pdf");
 const OCR_CACHE_PATH = path.join(CACHE_DIR, "documentos-medicos.ocr.json");
 const SOAP_CACHE_PATH = path.join(CACHE_DIR, "soap-structuring.json");
 const DOCUMENT_PAGE_CACHE_PATH = path.join(CACHE_DIR, "document-page-extractions.json");
+const MANUAL_DECISIONS_PATH = path.join(CACHE_DIR, "manual-decisions.json");
 
 const MISTRAL_API_BASE_URL =
   process.env.MISTRAL_API_BASE_URL?.replace(/\/+$/, "") || "https://api.mistral.ai";
@@ -378,6 +418,34 @@ async function writeJsonFile(filePath: string, value: unknown) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function emptyManualDecisions(): ManualDecisions {
+  const now = new Date().toISOString();
+  return {
+    createdAt: now,
+    documentIdentities: {},
+    documentPages: {},
+    markdownIdentities: {},
+    markdownBlocks: {},
+    patientNameOverrides: {},
+    syntheticPatients: [],
+    updatedAt: now,
+  };
+}
+
+function normalizeManualDecisions(input: Partial<ManualDecisions> | null | undefined): ManualDecisions {
+  const fallback = emptyManualDecisions();
+  return {
+    createdAt: input?.createdAt || fallback.createdAt,
+    documentIdentities: input?.documentIdentities || {},
+    documentPages: input?.documentPages || {},
+    markdownIdentities: input?.markdownIdentities || {},
+    markdownBlocks: input?.markdownBlocks || {},
+    patientNameOverrides: input?.patientNameOverrides || {},
+    syntheticPatients: input?.syntheticPatients || [],
+    updatedAt: input?.updatedAt || fallback.updatedAt,
+  };
+}
+
 function sanitizeFilename(value: string) {
   const normalized = stripAccents(value)
     .replace(/[^\w\s-]/g, " ")
@@ -407,6 +475,38 @@ function parseHeading(rawHeading: string): ParsedHeading {
     displayName,
     raw: cleaned,
   };
+}
+
+function markdownBlockDecisionKey(block: Pick<MarkdownPatientBlock, "heading" | "startLine" | "topLevelDate">) {
+  return hashValue(
+    JSON.stringify({
+      heading: block.heading.raw,
+      startLine: block.startLine,
+      topLevelDate: block.topLevelDate,
+    }),
+  );
+}
+
+function documentPageDecisionKey(pageNumber: number) {
+  return String(pageNumber);
+}
+
+function markdownBlockIdentityKey(block: Pick<MarkdownPatientBlock, "heading">) {
+  return hashValue(
+    JSON.stringify({
+      birthDate: block.heading.birthDate || "",
+      displayName: normalizeNameForMatch(block.heading.displayName || block.heading.raw),
+    }),
+  );
+}
+
+function documentPageIdentityKey(extraction: Pick<DocumentPageExtraction, "patientBirthDate" | "patientName">) {
+  return hashValue(
+    JSON.stringify({
+      patientBirthDate: extraction.patientBirthDate || "",
+      patientName: normalizeNameForMatch(extraction.patientName || ""),
+    }),
+  );
 }
 
 function parseMarkdownBlocks(markdown: string) {
@@ -496,6 +596,43 @@ function buildPatientIndex(patients: ImportPatient[]): InternalPatientRecord[] {
   }));
 }
 
+function applyManualNameOverrides(
+  patients: ImportPatient[],
+  overrides: ManualDecisions["patientNameOverrides"],
+) {
+  return patients.map((patient) => {
+    const override = overrides[String(patient.id)];
+    if (!override?.name?.trim()) {
+      return patient;
+    }
+
+    return {
+      ...patient,
+      name: override.name.trim(),
+    };
+  });
+}
+
+function toManualSyntheticPatient(record: ManualSyntheticPatientRecord): ImportPatient {
+  return {
+    appointments: [],
+    birthDate: record.birthDate,
+    contactPoints: [],
+    contacts: [],
+    createdAt: record.createdAt,
+    gender: "unknown",
+    id: record.id,
+    identifiers: [],
+    isDraft: record.isDraft,
+    name: record.name,
+    source: "synthetic",
+    syntheticAuditBlocks: record.sourceBlocks,
+    syntheticAuditPages: record.sourcePages,
+    syntheticCreatedBy: "manual_review",
+    updatedAt: record.updatedAt,
+  };
+}
+
 function patientCompletenessScore(patient: ImportPatient) {
   return (
     patient.identifiers.length * 5 +
@@ -509,6 +646,122 @@ function patientCompletenessScore(patient: ImportPatient) {
   );
 }
 
+function findPatientByManualDecision(
+  decision: ManualDecisionRecord | undefined,
+  allPatients: ImportPatient[],
+  patientsById: Map<number, ImportPatient>,
+): ManualPatientResolution {
+  if (!decision) {
+    return null;
+  }
+
+  if (decision.action === "skip") {
+    return { type: "skip" };
+  }
+
+  if (typeof decision.patientId === "number") {
+    const byId = patientsById.get(decision.patientId);
+    if (byId) {
+      return {
+        patient: byId,
+        type: "patient",
+      };
+    }
+  }
+
+  if (!decision.patientName) {
+    return null;
+  }
+
+  const normalizedName = normalizeNameForMatch(decision.patientName);
+  const byIdentity = allPatients
+    .filter((patient) => {
+      if (normalizeNameForMatch(patient.name) !== normalizedName) {
+        return false;
+      }
+
+      if (decision.patientBirthDate === undefined) {
+        return true;
+      }
+
+      return patient.birthDate === decision.patientBirthDate;
+    })
+    .sort((left, right) => {
+      const completenessDiff = patientCompletenessScore(right) - patientCompletenessScore(left);
+      if (completenessDiff !== 0) {
+        return completenessDiff;
+      }
+
+      return right.id - left.id;
+    })[0];
+
+  if (!byIdentity) {
+    return null;
+  }
+
+  return {
+    patient: byIdentity,
+    type: "patient",
+  };
+}
+
+function effectiveMarkdownManualDecision(
+  manualDecisions: ManualDecisions,
+  block: MarkdownPatientBlock,
+) {
+  return (
+    manualDecisions.markdownBlocks[markdownBlockDecisionKey(block)] ||
+    manualDecisions.markdownIdentities[markdownBlockIdentityKey(block)]
+  );
+}
+
+function effectiveDocumentManualDecision(
+  manualDecisions: ManualDecisions,
+  extraction: Pick<DocumentPageExtraction, "patientBirthDate" | "patientName">,
+  pageNumber: number,
+) {
+  return (
+    manualDecisions.documentPages[documentPageDecisionKey(pageNumber)] ||
+    manualDecisions.documentIdentities[documentPageIdentityKey(extraction)]
+  );
+}
+
+function hydrateMarkdownIdentityDecisions(
+  manualDecisions: ManualDecisions,
+  blocks: MarkdownPatientBlock[],
+) {
+  let changed = false;
+
+  for (const block of blocks) {
+    const pageDecision = manualDecisions.markdownBlocks[markdownBlockDecisionKey(block)];
+    const identityKey = markdownBlockIdentityKey(block);
+    if (pageDecision && !manualDecisions.markdownIdentities[identityKey]) {
+      manualDecisions.markdownIdentities[identityKey] = pageDecision;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function hydrateDocumentIdentityDecisions(
+  manualDecisions: ManualDecisions,
+  pages: MatchedDocumentPage[],
+) {
+  let changed = false;
+
+  for (const page of pages) {
+    const pageDecision = manualDecisions.documentPages[documentPageDecisionKey(page.pageNumber)];
+    const identityKey = documentPageIdentityKey(page.extraction);
+    if (pageDecision && !manualDecisions.documentIdentities[identityKey]) {
+      manualDecisions.documentIdentities[identityKey] = pageDecision;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function scorePatientCandidate(
   normalizedHint: string,
   hintTokens: string[],
@@ -520,12 +773,23 @@ function scorePatientCandidate(
   const editScore = 1 - distance / maxLength;
   const diceScore = diceCoefficient(normalizedHint, record.normalizedName);
   const tokenScore = tokenSimilarity(hintTokens, record.tokens);
+  const leadingTokenAligned =
+    Boolean(hintTokens.length && record.tokens.length) && hintTokens[0] === record.tokens[0];
+  const hintExtendsCandidate =
+    leadingTokenAligned &&
+    record.tokens.length < hintTokens.length &&
+    record.tokens.every((token, index) => hintTokens[index] === token);
+  const candidateExtendsHint =
+    leadingTokenAligned &&
+    hintTokens.length < record.tokens.length &&
+    hintTokens.every((token, index) => record.tokens[index] === token);
   const containsScore =
     normalizedHint && record.normalizedName.includes(normalizedHint)
       ? 1
       : record.normalizedName && normalizedHint.includes(record.normalizedName)
         ? 1
         : 0;
+  const expansionScore = hintExtendsCandidate || candidateExtendsHint ? 1 : 0;
   const birthDateMatched = Boolean(birthDateHint && record.patient.birthDate === birthDateHint);
   const score = Math.min(
     1,
@@ -533,6 +797,7 @@ function scorePatientCandidate(
       diceScore * 0.3 +
       tokenScore * 0.25 +
       containsScore * 0.1 +
+      expansionScore * 0.18 +
       (birthDateMatched ? 0.2 : 0),
   );
 
@@ -669,16 +934,25 @@ function matchPatientByName(
   };
 }
 
-function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
+function createSyntheticPatientsFromMarkdown(
+  blocks: MatchedMarkdownBlock[],
+  existingSyntheticPatients: ImportPatient[],
+  manualMarkdownDecisions: ManualDecisions["markdownBlocks"],
+) {
   const syntheticPatients: ImportPatient[] = [];
   let nextSyntheticId = -1;
 
   for (const block of blocks) {
+    const decisionKey = markdownBlockDecisionKey(block);
+    if (manualMarkdownDecisions[decisionKey]) {
+      continue;
+    }
+
     if (block.match.accepted || !block.heading.displayName) {
       continue;
     }
 
-    const syntheticIndex = buildPatientIndex(syntheticPatients);
+    const syntheticIndex = buildPatientIndex([...existingSyntheticPatients, ...syntheticPatients]);
     const normalizedHint = normalizeNameForMatch(block.heading.displayName);
     const hintTokens = tokenizeName(block.heading.displayName);
     const best = syntheticIndex
@@ -718,6 +992,7 @@ function createSyntheticPatientsFromMarkdown(blocks: MatchedMarkdownBlock[]) {
       name: block.heading.displayName.trim(),
       source: "synthetic",
       syntheticAuditBlocks: [auditBlock],
+      syntheticCreatedBy: "markdown_auto",
       updatedAt: new Date().toISOString(),
     });
     nextSyntheticId -= 1;
@@ -1630,8 +1905,19 @@ async function main() {
 
   const dbExport = await readJsonFile<LegacyDbExport>(DB_JSON_PATH);
   const markdown = await readFile(MARKDOWN_PATH, "utf8");
-  const databasePatients = dbExport.patients.map(toImportPatient);
-  const databasePatientIndex = buildPatientIndex(databasePatients);
+  const manualDecisions = normalizeManualDecisions(
+    await readJsonFileIfExists<Partial<ManualDecisions>>(MANUAL_DECISIONS_PATH, {}),
+  );
+  const databasePatients = applyManualNameOverrides(
+    dbExport.patients.map(toImportPatient),
+    manualDecisions.patientNameOverrides,
+  );
+  const manualSyntheticPatients = manualDecisions.syntheticPatients.map(toManualSyntheticPatient);
+  const namedManualSyntheticPatients = applyManualNameOverrides(
+    manualSyntheticPatients,
+    manualDecisions.patientNameOverrides,
+  );
+  const initialPatientIndex = buildPatientIndex([...databasePatients, ...namedManualSyntheticPatients]);
   const markdownBlocks = parseMarkdownBlocks(markdown);
 
   const initiallyMatchedBlocks: MatchedMarkdownBlock[] = markdownBlocks.map((block) => ({
@@ -1639,16 +1925,22 @@ async function main() {
     match: matchPatientByName(
       block.heading.displayName,
       block.heading.birthDate,
-      databasePatientIndex,
+      initialPatientIndex,
     ),
   }));
-  const syntheticPatients = createSyntheticPatientsFromMarkdown(initiallyMatchedBlocks);
-  const allPatients = [...databasePatients, ...syntheticPatients];
+  const syntheticPatients = createSyntheticPatientsFromMarkdown(
+    initiallyMatchedBlocks,
+    namedManualSyntheticPatients,
+    manualDecisions.markdownBlocks,
+  );
+  const allPatients = [...databasePatients, ...namedManualSyntheticPatients, ...syntheticPatients];
+  const patientsById = new Map(allPatients.map((patient) => [patient.id, patient]));
   const patientIndex = buildPatientIndex(allPatients);
   const matchedBlocks: MatchedMarkdownBlock[] = markdownBlocks.map((block) => ({
     ...block,
     match: matchPatientByName(block.heading.displayName, block.heading.birthDate, patientIndex),
   }));
+  hydrateMarkdownIdentityDecisions(manualDecisions, matchedBlocks);
 
   const soapCache = await readJsonFileIfExists<Record<string, SoapCacheRecord>>(SOAP_CACHE_PATH, {});
   const documentCache = await readJsonFileIfExists<Record<string, DocumentCacheRecord>>(
@@ -1665,27 +1957,42 @@ async function main() {
   >();
 
   const unmatchedMarkdownBlocks = matchedBlocks
-    .filter((block) => !block.match.accepted)
+    .filter((block) => {
+      const decision = effectiveMarkdownManualDecision(manualDecisions, block);
+      return !findPatientByManualDecision(decision, allPatients, patientsById) && !block.match.accepted;
+    })
     .map((block) => ({
       birthDate: block.heading.birthDate,
       candidates: block.match.candidates.map((candidate) => ({
         completenessScore: candidate.completenessScore,
+        patientId: candidate.patient.id,
         patientBirthDate: candidate.patient.birthDate,
         patientName: candidate.patient.name,
         score: Number(candidate.score.toFixed(4)),
         source: candidate.patient.source,
       })),
+      displayName: block.heading.displayName,
       heading: block.heading.raw,
       startLine: block.startLine,
       topLevelDate: block.topLevelDate,
     }));
 
   for (const block of matchedBlocks) {
-    if (!block.match.accepted) {
+    const manualResolution = findPatientByManualDecision(
+      effectiveMarkdownManualDecision(manualDecisions, block),
+      allPatients,
+      patientsById,
+    );
+    if (manualResolution?.type === "skip") {
       continue;
     }
 
-    const matchedPatient = block.match.candidates[0]?.patient;
+    const matchedPatient =
+      manualResolution?.type === "patient"
+        ? manualResolution.patient
+        : block.match.accepted
+          ? block.match.candidates[0]?.patient
+          : undefined;
     if (!matchedPatient) {
       continue;
     }
@@ -1733,13 +2040,22 @@ async function main() {
       });
     }
   }
+  hydrateDocumentIdentityDecisions(manualDecisions, matchedDocumentPages);
 
   const patientDocumentEntries = new Map<number, MatchedDocumentPage[]>();
   const unresolvedDocumentPages = matchedDocumentPages
-    .filter((page) => !page.match.accepted)
+    .filter((page) => {
+      const decision = effectiveDocumentManualDecision(
+        manualDecisions,
+        page.extraction,
+        page.pageNumber,
+      );
+      return !findPatientByManualDecision(decision, allPatients, patientsById) && !page.match.accepted;
+    })
     .map((page) => ({
       candidates: page.match.candidates.map((candidate) => ({
         completenessScore: candidate.completenessScore,
+        patientId: candidate.patient.id,
         patientBirthDate: candidate.patient.birthDate,
         patientName: candidate.patient.name,
         score: Number(candidate.score.toFixed(4)),
@@ -1755,9 +2071,31 @@ async function main() {
     }));
 
   matchedDocumentPages
-    .filter((page) => page.match.accepted && page.match.candidates[0]?.patient)
     .forEach((page) => {
-      const patientId = page.match.candidates[0].patient.id;
+      const manualResolution = findPatientByManualDecision(
+        effectiveDocumentManualDecision(
+          manualDecisions,
+          page.extraction,
+          page.pageNumber,
+        ),
+        allPatients,
+        patientsById,
+      );
+      if (manualResolution?.type === "skip") {
+        return;
+      }
+
+      const patient =
+        manualResolution?.type === "patient"
+          ? manualResolution.patient
+          : page.match.accepted
+            ? page.match.candidates[0]?.patient
+            : undefined;
+      if (!patient) {
+        return;
+      }
+
+      const patientId = patient.id;
       if (!patientDocumentEntries.has(patientId)) {
         patientDocumentEntries.set(patientId, []);
       }
@@ -1765,12 +2103,14 @@ async function main() {
       patientDocumentEntries.get(patientId)?.push(page);
     });
 
-  const createdMinimalPatients = syntheticPatients.map((patient) => ({
+  const createdMinimalPatients = [...manualSyntheticPatients, ...syntheticPatients].map((patient) => ({
     birthDate: patient.birthDate,
+    createdBy: patient.syntheticCreatedBy || "markdown_auto",
     isDraft: patient.isDraft,
     patientId: patient.id,
     patientName: patient.name,
     sourceBlocks: patient.syntheticAuditBlocks ?? [],
+    sourcePages: patient.syntheticAuditPages ?? [],
   }));
 
   const reviewReport = {
@@ -1812,14 +2152,18 @@ async function main() {
 
   await writeJsonFile(SOAP_CACHE_PATH, soapCache);
   await writeJsonFile(DOCUMENT_PAGE_CACHE_PATH, documentCache);
+  await writeJsonFile(MANUAL_DECISIONS_PATH, manualDecisions);
 
   console.log(
     JSON.stringify(
       {
         bundlesGenerated,
-        createdDraftPatients: syntheticPatients.filter((patient) => patient.isDraft).length,
-        createdMinimalPatients: syntheticPatients.length,
+        createdDraftPatients: createdMinimalPatients.filter((patient) => patient.isDraft).length,
+        createdMinimalPatients: createdMinimalPatients.length,
         lmEnabled,
+        manualDocumentDecisions: Object.keys(manualDecisions.documentPages).length,
+        manualMarkdownDecisions: Object.keys(manualDecisions.markdownBlocks).length,
+        manualPatientNameOverrides: Object.keys(manualDecisions.patientNameOverrides).length,
         ocrPages: ocrCache?.pages.length || 0,
         ocrEnabled,
         patientsSelected: limitedPatients.length,

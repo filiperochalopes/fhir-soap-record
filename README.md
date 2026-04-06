@@ -176,6 +176,29 @@ For SOAP import, the `Composition` can provide the encounter date in either of t
 
 For narrative import, the `Composition` must carry at least one `section.text.div`. The app stores it as a narrative note and exposes it back through `Composition`.
 
+## Migration Import Tools
+
+The migration helper scripts read fixed file names inside `import/`:
+
+- `import/db_patients.json`
+- `import/Prontuario_Docs.md`
+- `import/Documentos_Medicos.pdf`
+
+Main commands:
+
+```bash
+pnpm import:generate
+pnpm import:review
+```
+
+To force a full rerun of OCR and LM stages, ignoring cached results:
+
+```bash
+pnpm import:generate -- --force-ocr --force-lm
+```
+
+The import pipeline also persists cache and manual review state in `import/cache/`.
+
 ## Feature Scope
 
 Implemented MVP screens:
