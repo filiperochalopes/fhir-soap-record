@@ -77,3 +77,19 @@ Flags úteis:
 - `--markdown-only`
 - `--limit N`
 - `--include-resolved`
+
+## Importar todos os JSONs gerados
+
+Para subir todos os bundles de `import/out` de uma vez para `POST /fhir`:
+
+```bash
+for file in import/out/*.json; do
+  [ "$(basename "$file")" = "_review.json" ] && continue
+  echo "Importando $file"
+  curl -sS -X POST http://localhost:3000/fhir \
+    -H "Authorization: Bearer SEU_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data @"$file"
+  echo
+done
+```

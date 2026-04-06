@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+
 try {
   process.loadEnvFile?.();
 } catch (error) {
@@ -10,6 +13,97 @@ try {
 function readArg(flag: string) {
   const index = process.argv.indexOf(flag);
   return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+type CreateUserInput = {
+  crm?: string;
+  crmUf?: string;
+  fullName?: string;
+};
+
+type PromptValidator = {
+  safeParse: (
+    value: unknown,
+  ) =>
+    | { success: true; data: string }
+    | { success: false; error: { issues: Array<{ message: string }> } };
+};
+
+function hasValue(value: string | undefined) {
+  return value !== undefined && value.trim().length > 0;
+}
+
+async function promptForMissingFields(
+  initialInput: CreateUserInput,
+  validators: {
+    crm: PromptValidator;
+    crmUf: PromptValidator;
+    fullName: PromptValidator;
+  },
+) {
+  const missingFields = Object.entries(initialInput)
+    .filter(([, value]) => !hasValue(value))
+    .map(([key]) => key);
+
+  if (missingFields.length === 0) {
+    return initialInput;
+  }
+
+  if (!input.isTTY || !output.isTTY) {
+    throw new Error(
+      "Missing required arguments. Run in an interactive terminal or pass --fullName, --crm and --crmUf.",
+    );
+  }
+
+  const terminal = createInterface({ input, output });
+  const values = { ...initialInput };
+
+  try {
+    console.log("");
+    console.log("Enter the clinical user details:");
+
+    while (!hasValue(values.fullName)) {
+      const answer = await terminal.question("Full name: ");
+      const parsed = validators.fullName.safeParse(answer);
+
+      if (parsed.success) {
+        values.fullName = parsed.data;
+        break;
+      }
+
+      console.log(parsed.error.issues[0]?.message ?? "Full name is invalid");
+    }
+
+    while (!hasValue(values.crm)) {
+      const answer = await terminal.question("CRM: ");
+      const parsed = validators.crm.safeParse(answer);
+
+      if (parsed.success) {
+        values.crm = parsed.data;
+        break;
+      }
+
+      console.log(parsed.error.issues[0]?.message ?? "CRM is invalid");
+    }
+
+    while (!hasValue(values.crmUf)) {
+      const answer = await terminal.question("CRM UF: ");
+      const parsed = validators.crmUf.safeParse(answer);
+
+      if (parsed.success) {
+        values.crmUf = parsed.data;
+        break;
+      }
+
+      console.log(parsed.error.issues[0]?.message ?? "CRM UF is invalid");
+    }
+
+    console.log("");
+
+    return values;
+  } finally {
+    terminal.close();
+  }
 }
 
 async function main() {
@@ -24,10 +118,19 @@ async function main() {
     import("../app/lib/validation/auth"),
   ]);
 
+  const input = await promptForMissingFields(
+    {
+      crm: readArg("--crm"),
+      crmUf: readArg("--crmUf"),
+      fullName: readArg("--fullName"),
+    },
+    authUserCliSchema.shape,
+  );
+
   const parsed = authUserCliSchema.parse({
-    crm: readArg("--crm"),
-    crmUf: readArg("--crmUf"),
-    fullName: readArg("--fullName"),
+    crm: input.crm,
+    crmUf: input.crmUf,
+    fullName: input.fullName,
   });
 
   const { rawToken, user } = await createUserToken(parsed);

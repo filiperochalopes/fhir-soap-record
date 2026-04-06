@@ -139,6 +139,12 @@ Practical rule:
 Create the first clinical user and token with the CLI:
 
 ```bash
+pnpm create:user
+```
+
+The command prompts for full name, CRM, and CRM UF when they are not passed as flags. You can also provide them explicitly:
+
+```bash
 pnpm create:user -- --fullName "Dra. Ana Silva" --crm "12345" --crmUf "BA"
 ```
 
