@@ -30,7 +30,9 @@ COPY --from=deps /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/scripts/start-app.sh ./scripts/start-app.sh
+COPY --from=build /app/app ./app
+COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 RUN chmod +x ./scripts/start-app.sh
