@@ -18,6 +18,16 @@ export async function loader({
     include: {
       contacts: true,
       identifier: true,
+      mergedInto: {
+        select: {
+          id: true,
+        },
+      },
+      replaces: {
+        select: {
+          id: true,
+        },
+      },
       telecom: true,
     },
   });
@@ -28,4 +38,3 @@ export async function loader({
 
   return fhirJson(toFhirPatient(patient));
 }
-

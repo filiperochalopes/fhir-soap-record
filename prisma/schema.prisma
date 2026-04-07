@@ -8,19 +8,23 @@ datasource db {
 }
 
 model Patient {
-  id        Int      @id @default(autoincrement())
-  name      String
-  gender    String
-  birthDate DateTime? @map("birth_date") @db.Date
-  isDraft   Boolean  @default(false) @map("is_draft")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  id                  Int       @id @default(autoincrement())
+  name                String
+  gender              String
+  birthDate           DateTime? @map("birth_date") @db.Date
+  isDraft             Boolean   @default(false) @map("is_draft")
+  active              Boolean   @default(true)
+  mergedIntoPatientId Int?      @map("merged_into_patient_id")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  telecom      ContactPoint[]
-  identifier   Identifier[]
-  appointments Appointment[]
-  contacts     Contact[]
-  soapNotes    SoapNote[]
+  mergedInto     Patient?        @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id])
+  replaces       Patient[]       @relation("PatientMerge")
+  telecom        ContactPoint[]
+  identifier     Identifier[]
+  appointments   Appointment[]
+  contacts       Contact[]
+  soapNotes      SoapNote[]
   narrativeNotes NarrativeNote[]
 }
 
@@ -91,10 +95,10 @@ model AuthUser {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tokens    AuthToken[]
-  soapNotes SoapNote[]
+  tokens         AuthToken[]
+  soapNotes      SoapNote[]
   narrativeNotes NarrativeNote[]
-  auditLogs AuditLog[]
+  auditLogs      AuditLog[]
 
   @@unique([crm, crmUf])
 }
@@ -115,18 +119,18 @@ model AuthToken {
 }
 
 model SoapNote {
-  id             Int       @id @default(autoincrement())
-  patientId      Int       @map("patient_id")
-  authorUserId   Int       @map("author_user_id")
-  encounteredAt  DateTime  @map("encountered_at")
-  subjective     String    @db.Text
-  objective      String    @db.Text
-  assessment     String    @db.Text
-  plan           String    @db.Text
-  sourceSystem   String?   @map("source_system")
-  sourceRecordId String?   @map("source_record_id")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+  id             Int      @id @default(autoincrement())
+  patientId      Int      @map("patient_id")
+  authorUserId   Int      @map("author_user_id")
+  encounteredAt  DateTime @map("encountered_at")
+  subjective     String   @db.Text
+  objective      String   @db.Text
+  assessment     String   @db.Text
+  plan           String   @db.Text
+  sourceSystem   String?  @map("source_system")
+  sourceRecordId String?  @map("source_record_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   patient Patient  @relation(fields: [patientId], references: [id])
   author  AuthUser @relation(fields: [authorUserId], references: [id])

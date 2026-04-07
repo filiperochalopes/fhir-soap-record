@@ -13,12 +13,23 @@ export async function loader({ request }: { request: Request }) {
   const patients = await prisma.patient.findMany({
     where: name
       ? {
+          active: true,
           name: { contains: name },
         }
-      : undefined,
+      : { active: true },
     include: {
       contacts: true,
       identifier: true,
+      mergedInto: {
+        select: {
+          id: true,
+        },
+      },
+      replaces: {
+        select: {
+          id: true,
+        },
+      },
       telecom: true,
     },
     take: 100,
@@ -35,4 +46,3 @@ export async function loader({ request }: { request: Request }) {
     ),
   );
 }
-

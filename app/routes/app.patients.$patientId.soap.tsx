@@ -26,6 +26,12 @@ export async function loader({
     include: {
       contacts: true,
       identifier: true,
+      mergedInto: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       telecom: true,
     },
   });
@@ -79,6 +85,28 @@ export async function action({
   const auth = await requireUserSession(request);
   const formData = await request.formData();
   const noteType = String(formData.get("noteType") ?? "soap");
+  const patient = await prisma.patient.findUnique({
+    where: { id: Number(params.patientId) },
+    select: {
+      active: true,
+      mergedInto: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!patient) {
+    throw new Response("Patient not found", { status: 404 });
+  }
+
+  if (!patient.active && patient.mergedInto) {
+    return {
+      error: `This patient was merged into ${patient.mergedInto.name}. Use the surviving record instead.`,
+    };
+  }
 
   try {
     if (noteType === "narrative") {
@@ -171,6 +199,17 @@ export default function SoapRoute() {
         </p>
       ) : null}
 
+      {!patient.active && patient.mergedInto ? (
+        <p className="rounded-2xl border border-slate-500/20 bg-slate-500/10 px-4 py-3 text-sm">
+          This patient was merged into{" "}
+          <Link className="font-semibold underline" to={`/patients/${patient.mergedInto.id}/edit`}>
+            {patient.mergedInto.name}
+          </Link>
+          . Historical notes remain visible here, but new entries must be recorded on the
+          surviving patient.
+        </p>
+      ) : null}
+
       <ClinicalHistory notes={previousNotes} />
 
       {actionData?.error ? (
@@ -179,83 +218,85 @@ export default function SoapRoute() {
         </p>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className="panel p-6">
-          <div>
-            <h3 className="text-2xl font-semibold">New SOAP note</h3>
-            <p className="mt-2 text-sm text-[color:var(--muted)]">
-              Structured clinical registration with subjective, objective, assessment, and plan.
-            </p>
-          </div>
-          <Form className="mt-8 space-y-5" method="post">
-            <input name="noteType" type="hidden" value="soap" />
-            <label className="block">
-              <span className="field-label">Encounter date and time</span>
-              <input
-                defaultValue={toDateTimeLocalValue(new Date())}
-                name="encounteredAt"
-                required
-                type="datetime-local"
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Subjective</span>
-              <textarea name="subjective" required />
-            </label>
-            <label className="block">
-              <span className="field-label">Objective</span>
-              <textarea name="objective" required />
-            </label>
-            <label className="block">
-              <span className="field-label">Assessment</span>
-              <textarea name="assessment" required />
-            </label>
-            <label className="block">
-              <span className="field-label">Plan</span>
-              <textarea name="plan" required />
-            </label>
-            <div className="flex justify-end">
-              <button className="button-primary" type="submit">
-                Save SOAP note
-              </button>
+      {patient.active ? (
+        <div className="grid gap-6 xl:grid-cols-2">
+          <section className="panel p-6">
+            <div>
+              <h3 className="text-2xl font-semibold">New SOAP note</h3>
+              <p className="mt-2 text-sm text-[color:var(--muted)]">
+                Structured clinical registration with subjective, objective, assessment, and plan.
+              </p>
             </div>
-          </Form>
-        </section>
+            <Form className="mt-8 space-y-5" method="post">
+              <input name="noteType" type="hidden" value="soap" />
+              <label className="block">
+                <span className="field-label">Encounter date and time</span>
+                <input
+                  defaultValue={toDateTimeLocalValue(new Date())}
+                  name="encounteredAt"
+                  required
+                  type="datetime-local"
+                />
+              </label>
+              <label className="block">
+                <span className="field-label">Subjective</span>
+                <textarea name="subjective" required />
+              </label>
+              <label className="block">
+                <span className="field-label">Objective</span>
+                <textarea name="objective" required />
+              </label>
+              <label className="block">
+                <span className="field-label">Assessment</span>
+                <textarea name="assessment" required />
+              </label>
+              <label className="block">
+                <span className="field-label">Plan</span>
+                <textarea name="plan" required />
+              </label>
+              <div className="flex justify-end">
+                <button className="button-primary" type="submit">
+                  Save SOAP note
+                </button>
+              </div>
+            </Form>
+          </section>
 
-        <section className="panel p-6">
-          <div>
-            <h3 className="text-2xl font-semibold">New narrative note</h3>
-            <p className="mt-2 text-sm text-[color:var(--muted)]">
-              Free-text consultation note exported as FHIR `Composition` narrative.
-            </p>
-          </div>
-          <Form className="mt-8 space-y-5" method="post">
-            <input name="noteType" type="hidden" value="narrative" />
-            <label className="block">
-              <span className="field-label">Encounter date and time</span>
-              <input
-                defaultValue={toDateTimeLocalValue(new Date())}
-                name="encounteredAt"
-                required
-                type="datetime-local"
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Title</span>
-              <input name="title" placeholder="Optional note title" />
-            </label>
-            <label className="block">
-              <span className="field-label">Narrative</span>
-              <textarea name="body" required />
-            </label>
-            <div className="flex justify-end">
-              <button className="button-primary" type="submit">
-                Save narrative note
-              </button>
+          <section className="panel p-6">
+            <div>
+              <h3 className="text-2xl font-semibold">New narrative note</h3>
+              <p className="mt-2 text-sm text-[color:var(--muted)]">
+                Free-text consultation note exported as FHIR `Composition` narrative.
+              </p>
             </div>
-          </Form>
-        </section>
-      </div>
+            <Form className="mt-8 space-y-5" method="post">
+              <input name="noteType" type="hidden" value="narrative" />
+              <label className="block">
+                <span className="field-label">Encounter date and time</span>
+                <input
+                  defaultValue={toDateTimeLocalValue(new Date())}
+                  name="encounteredAt"
+                  required
+                  type="datetime-local"
+                />
+              </label>
+              <label className="block">
+                <span className="field-label">Title</span>
+                <input name="title" placeholder="Optional note title" />
+              </label>
+              <label className="block">
+                <span className="field-label">Narrative</span>
+                <textarea name="body" required />
+              </label>
+              <div className="flex justify-end">
+                <button className="button-primary" type="submit">
+                  Save narrative note
+                </button>
+              </div>
+            </Form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

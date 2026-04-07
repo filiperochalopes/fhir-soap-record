@@ -98,7 +98,7 @@ docker compose up --build
 
 The `db` service creates the empty `fhir_soap_record` database, and the `app` service applies Prisma migrations automatically on startup.
 
-If ports `3000` or `3306` are already in use on the host, override them with `APP_PORT` and `MYSQL_PORT`.
+If ports `3000` or `3306` are already in use on the host, override them with `APP_PORT` and `DB_PORT`.
 
 To run the app against an external MySQL address instead of the bundled `db` service:
 
@@ -119,7 +119,10 @@ pnpm prisma:migrate:deploy
 - `DATABASE_URL`: MySQL connection string used by Prisma Client
 - `APP_PORT`: host port published for the web app in Docker Compose
 - `APP_URL`: external base URL used in generated docs and examples
-- `MYSQL_PORT`: host port published for MySQL in Docker Compose
+- `DB_PORT`: host port published for MySQL in Docker Compose
+- `DB_NAME`: database name created by the bundled MySQL container
+- `DB_USER`: application user created by the bundled MySQL container
+- `DB_PASS`: password used by the bundled MySQL container and default local `DATABASE_URL`
 - `PORT`: Node application port
 - `COOKIE_NAME`: auth cookie name for web login
 

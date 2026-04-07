@@ -13,6 +13,7 @@ export async function loader({ request }: { request: Request }) {
   const patients = await prisma.patient.findMany({
     where: query
       ? {
+          active: true,
           OR: [
             { name: { contains: query } },
             {
@@ -24,7 +25,7 @@ export async function loader({ request }: { request: Request }) {
             },
           ],
         }
-      : undefined,
+      : { active: true },
     include: {
       identifier: true,
       telecom: true,

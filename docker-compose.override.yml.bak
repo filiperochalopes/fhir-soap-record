@@ -1,4 +1,8 @@
 services:
+  db:
+    volumes:
+      - mysql_data:/var/lib/mysql
+
   app:
     build:
       context: .
@@ -9,3 +13,6 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+
+volumes:
+  mysql_data:

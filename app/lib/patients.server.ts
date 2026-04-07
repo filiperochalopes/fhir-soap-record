@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, PrismaClient, type Patient } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
 import { prisma } from "~/lib/prisma.server";
 import type { PatientInput } from "~/lib/validation/patients";
+
+type PatientClient = PrismaClient | Prisma.TransactionClient;
 
 function patientNestedWrite(input: PatientInput) {
   return {
@@ -31,8 +33,50 @@ function patientNestedWrite(input: PatientInput) {
   };
 }
 
+async function resolveCurrentPatient(patientId: number, db: PatientClient = prisma) {
+  const visitedIds = new Set<number>();
+  let currentPatientId = patientId;
+
+  while (true) {
+    if (visitedIds.has(currentPatientId)) {
+      throw new Error("Circular patient merge link detected.");
+    }
+
+    visitedIds.add(currentPatientId);
+    const patient = await db.patient.findUnique({
+      where: { id: currentPatientId },
+    });
+
+    if (!patient || !patient.mergedIntoPatientId) {
+      return patient;
+    }
+
+    currentPatientId = patient.mergedIntoPatientId;
+  }
+}
+
+function assertPatientCanBeEdited(patient: Pick<Patient, "active" | "mergedIntoPatientId">) {
+  if (!patient.active && patient.mergedIntoPatientId) {
+    throw new Error("Cannot update a merged patient. Use the surviving record.");
+  }
+}
+
 export async function savePatient(input: PatientInput, actorUserId: number, patientId?: number) {
   return prisma.$transaction(async (tx) => {
+    if (patientId) {
+      const existingPatient = await tx.patient.findUnique({
+        where: { id: patientId },
+        select: {
+          active: true,
+          mergedIntoPatientId: true,
+        },
+      });
+
+      if (existingPatient) {
+        assertPatientCanBeEdited(existingPatient);
+      }
+    }
+
     const patient = patientId
       ? await tx.patient.update({
           where: { id: patientId },
@@ -104,7 +148,7 @@ export async function findPatientForImport(args: {
     });
 
     if (externalIdentifier?.patient) {
-      return externalIdentifier.patient;
+      return resolveCurrentPatient(externalIdentifier.patient.id);
     }
   }
 
@@ -120,12 +164,13 @@ export async function findPatientForImport(args: {
     });
 
     if (existing?.patient) {
-      return existing.patient;
+      return resolveCurrentPatient(existing.patient.id);
     }
   }
 
   return prisma.patient.findFirst({
     where: {
+      active: true,
       birthDate: args.birthDate,
       ...(args.birthDate ? {} : { isDraft: args.isDraft }),
       name: args.name,
@@ -238,4 +283,87 @@ export async function upsertImportedPatient(args: {
   });
 
   return { patient: updated, status: "updated" as const };
+}
+
+export async function mergePatientRecords(args: {
+  actorUserId: number;
+  sourcePatientId: number;
+  targetPatientId: number;
+}) {
+  if (args.sourcePatientId === args.targetPatientId) {
+    throw new Error("Select a different patient as the merge target.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const [sourcePatient, targetPatient] = await Promise.all([
+      tx.patient.findUnique({
+        where: { id: args.sourcePatientId },
+        select: {
+          active: true,
+          id: true,
+          mergedIntoPatientId: true,
+          name: true,
+        },
+      }),
+      tx.patient.findUnique({
+        where: { id: args.targetPatientId },
+        select: {
+          active: true,
+          id: true,
+          mergedIntoPatientId: true,
+          name: true,
+        },
+      }),
+    ]);
+
+    if (!sourcePatient || !targetPatient) {
+      throw new Error("Patient not found.");
+    }
+
+    if (!sourcePatient.active && sourcePatient.mergedIntoPatientId) {
+      throw new Error("This patient has already been merged into another record.");
+    }
+
+    if (!targetPatient.active || targetPatient.mergedIntoPatientId) {
+      throw new Error("The selected merge target is inactive.");
+    }
+
+    const redirectedPatients = await tx.patient.updateMany({
+      where: {
+        mergedIntoPatientId: sourcePatient.id,
+      },
+      data: {
+        mergedIntoPatientId: targetPatient.id,
+      },
+    });
+
+    await tx.patient.update({
+      where: { id: sourcePatient.id },
+      data: {
+        active: false,
+        mergedIntoPatientId: targetPatient.id,
+      },
+    });
+
+    await writeAuditLog(tx, {
+      action: "patient.merged",
+      category: "patient",
+      entityId: String(sourcePatient.id),
+      entityType: "Patient",
+      metadata: {
+        redirectedMergedPatients: redirectedPatients.count,
+        sourcePatientId: sourcePatient.id,
+        sourcePatientName: sourcePatient.name,
+        targetPatientId: targetPatient.id,
+        targetPatientName: targetPatient.name,
+      } satisfies Prisma.JsonObject,
+      userId: args.actorUserId,
+    });
+
+    return {
+      redirectedMergedPatients: redirectedPatients.count,
+      sourcePatient,
+      targetPatient,
+    };
+  });
 }

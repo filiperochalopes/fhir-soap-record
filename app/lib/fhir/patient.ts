@@ -1,8 +1,10 @@
-import type { Contact, ContactPoint, Identifier, Patient } from "@prisma/client";
+import type { Contact, ContactPoint, Identifier, Patient as PatientRecord } from "@prisma/client";
 
-export type PatientWithRelations = Patient & {
+export type PatientWithRelations = PatientRecord & {
   contacts: Contact[];
   identifier: Identifier[];
+  mergedInto: Pick<PatientRecord, "id"> | null;
+  replaces: Array<Pick<PatientRecord, "id">>;
   telecom: ContactPoint[];
 };
 
@@ -16,9 +18,25 @@ function normalizeGender(gender: string) {
 }
 
 export function toFhirPatient(patient: PatientWithRelations) {
+  const links = [
+    ...(patient.mergedInto
+      ? [
+          {
+            other: { reference: `Patient/${patient.mergedInto.id}` },
+            type: "replaced-by",
+          },
+        ]
+      : []),
+    ...patient.replaces.map((replacedPatient) => ({
+      other: { reference: `Patient/${replacedPatient.id}` },
+      type: "replaces",
+    })),
+  ];
+
   return {
     resourceType: "Patient",
     id: String(patient.id),
+    active: patient.active,
     identifier: patient.identifier.map((identifier) => ({
       system: identifier.system,
       value: identifier.value,
@@ -38,6 +56,11 @@ export function toFhirPatient(patient: PatientWithRelations) {
               valueBoolean: true,
             },
           ],
+        }
+      : {}),
+    ...(links.length
+      ? {
+          link: links,
         }
       : {}),
     telecom: patient.telecom.map((contactPoint) => ({
