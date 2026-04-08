@@ -5,6 +5,13 @@ import { prisma } from "~/lib/prisma.server";
 import type { PatientInput } from "~/lib/validation/patients";
 
 type PatientClient = PrismaClient | Prisma.TransactionClient;
+type ImportedPatientMatch = Prisma.PatientGetPayload<{
+  include: {
+    contacts: true;
+    identifier: true;
+    telecom: true;
+  };
+}>;
 
 function patientNestedWrite(input: PatientInput) {
   return {
@@ -53,6 +60,135 @@ async function resolveCurrentPatient(patientId: number, db: PatientClient = pris
 
     currentPatientId = patient.mergedIntoPatientId;
   }
+}
+
+async function loadPatientForImport(patientId: number) {
+  return prisma.patient.findUnique({
+    where: { id: patientId },
+    include: {
+      contacts: true,
+      identifier: true,
+      telecom: true,
+    },
+  });
+}
+
+function normalizeDateOnly(date: Date | null | undefined) {
+  return date ? date.toISOString().slice(0, 10) : "";
+}
+
+function normalizeTupleSet<T>(items: T[], serialize: (item: T) => string) {
+  return [...items]
+    .map(serialize)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function hasEverySerializedItem(existing: string[], incoming: string[]) {
+  const existingSet = new Set(existing);
+  return incoming.every((value) => existingSet.has(value));
+}
+
+async function identifiersWouldChange(
+  existing: ImportedPatientMatch,
+  incomingIdentifiers: Array<{ system: string; value: string }>,
+) {
+  const existingIdentifiers = normalizeTupleSet(
+    existing.identifier,
+    (identifier) => `${identifier.system}\u0000${identifier.value}`,
+  );
+  const incomingIdentifierKeys = normalizeTupleSet(
+    incomingIdentifiers,
+    (identifier) => `${identifier.system}\u0000${identifier.value}`,
+  );
+  const missingIdentifierKeys = incomingIdentifierKeys.filter(
+    (identifierKey) => !new Set(existingIdentifiers).has(identifierKey),
+  );
+
+  if (!missingIdentifierKeys.length) {
+    return false;
+  }
+
+  const globallyClaimedIdentifiers = await prisma.identifier.findMany({
+    where: {
+      NOT: { patientId: existing.id },
+      OR: missingIdentifierKeys.map((identifierKey) => {
+        const [system, value] = identifierKey.split("\u0000");
+        return { system, value };
+      }),
+    },
+    select: {
+      system: true,
+      value: true,
+    },
+  });
+
+  const globallyClaimedIdentifierKeys = new Set(
+    globallyClaimedIdentifiers.map((identifier) => `${identifier.system}\u0000${identifier.value}`),
+  );
+
+  return missingIdentifierKeys.some(
+    (identifierKey) => !globallyClaimedIdentifierKeys.has(identifierKey),
+  );
+}
+
+async function patientImportWouldChange(
+  existing: ImportedPatientMatch,
+  input: Omit<PatientInput, "contacts" | "identifiers" | "telecom"> & {
+    contacts: Array<{ name: string; relationship: string }>;
+    identifiers: Array<{ system: string; value: string }>;
+    telecom: Array<{ system: string; value: string }>;
+  },
+) {
+  const nextBirthDate = input.birthDate ?? existing.birthDate;
+  const nextIsDraft = input.birthDate ? input.isDraft : existing.isDraft;
+
+  if (normalizeDateOnly(existing.birthDate) !== normalizeDateOnly(nextBirthDate)) {
+    return true;
+  }
+
+  if (existing.gender !== input.gender) {
+    return true;
+  }
+
+  if (existing.isDraft !== nextIsDraft) {
+    return true;
+  }
+
+  if (existing.name !== input.name) {
+    return true;
+  }
+
+  if (await identifiersWouldChange(existing, input.identifiers)) {
+    return true;
+  }
+
+  const existingTelecom = normalizeTupleSet(
+    existing.telecom,
+    (contactPoint) => `${contactPoint.system}\u0000${contactPoint.value}`,
+  );
+  const incomingTelecom = normalizeTupleSet(
+    input.telecom,
+    (contactPoint) => `${contactPoint.system}\u0000${contactPoint.value}`,
+  );
+
+  if (!hasEverySerializedItem(existingTelecom, incomingTelecom)) {
+    return true;
+  }
+
+  const existingContacts = normalizeTupleSet(
+    existing.contacts,
+    (contact) => `${contact.name}\u0000${contact.relationship}`,
+  );
+  const incomingContacts = normalizeTupleSet(
+    input.contacts,
+    (contact) => `${contact.name}\u0000${contact.relationship}`,
+  );
+
+  return !arraysEqual(existingContacts, incomingContacts);
 }
 
 function assertPatientCanBeEdited(patient: Pick<Patient, "active" | "mergedIntoPatientId">) {
@@ -148,7 +284,8 @@ export async function findPatientForImport(args: {
     });
 
     if (externalIdentifier?.patient) {
-      return resolveCurrentPatient(externalIdentifier.patient.id);
+      const current = await resolveCurrentPatient(externalIdentifier.patient.id);
+      return current ? loadPatientForImport(current.id) : null;
     }
   }
 
@@ -164,7 +301,8 @@ export async function findPatientForImport(args: {
     });
 
     if (existing?.patient) {
-      return resolveCurrentPatient(existing.patient.id);
+      const current = await resolveCurrentPatient(existing.patient.id);
+      return current ? loadPatientForImport(current.id) : null;
     }
   }
 
@@ -179,6 +317,11 @@ export async function findPatientForImport(args: {
       { isDraft: "asc" },
       { updatedAt: "desc" },
     ],
+    include: {
+      contacts: true,
+      identifier: true,
+      telecom: true,
+    },
   });
 }
 
@@ -243,10 +386,25 @@ export async function upsertImportedPatient(args: {
     return { patient: created, status: "created" as const };
   }
 
+  if (
+    existing &&
+    !(await patientImportWouldChange(existing, {
+      ...args.input,
+      identifiers,
+      telecom: args.input.telecom,
+    }))
+  ) {
+    return { patient: existing, status: "skipped" as const };
+  }
+
   const updated = await prisma.patient.update({
     where: { id: existing.id },
     data: {
       birthDate: args.input.birthDate ?? undefined,
+      contacts: {
+        deleteMany: {},
+        create: args.input.contacts,
+      },
       gender: args.input.gender,
       isDraft: args.input.birthDate ? args.input.isDraft : existing.isDraft,
       name: args.input.name,
