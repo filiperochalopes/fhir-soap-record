@@ -80,7 +80,7 @@ model Appointment {
 
 model GeneralSetting {
   id        Int      @id @default(autoincrement())
-  property  String
+  property  String   @unique
   value     String
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")

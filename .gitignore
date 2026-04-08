@@ -8,6 +8,7 @@ coverage
 dist
 *.log
 docker-compose.override.yml
+data/
 import/*
 !import/.keep
 !import/tools/

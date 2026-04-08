@@ -24,5 +24,7 @@ export default [
     route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
     route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
     route("agenda", "routes/app.agenda.tsx"),
+    route("settings/export", "routes/app.settings.export.ts"),
+    route("settings", "routes/app.settings.tsx"),
   ]),
 ] satisfies RouteConfig;

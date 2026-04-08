@@ -14,6 +14,7 @@ type LoaderData = {
 const links = [
   { label: "Patients", to: "/patients" },
   { label: "Agenda", to: "/agenda" },
+  { label: "Settings", to: "/settings" },
 ];
 
 export function AppShell() {
