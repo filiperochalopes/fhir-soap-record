@@ -12,13 +12,12 @@ export const soapNoteInputSchema = z.object({
 
 export type SoapNoteInput = z.infer<typeof soapNoteInputSchema>;
 
-export function parseSoapForm(formData: FormData) {
+export function parseSoapForm(formData: FormData, timeZone?: string) {
   return soapNoteInputSchema.parse({
     assessment: pickFirstString(formData.get("assessment")),
-    encounteredAt: parseDateTimeInput(pickFirstString(formData.get("encounteredAt"))),
+    encounteredAt: parseDateTimeInput(pickFirstString(formData.get("encounteredAt")), timeZone),
     objective: pickFirstString(formData.get("objective")),
     plan: pickFirstString(formData.get("plan")),
     subjective: pickFirstString(formData.get("subjective")),
   });
 }
-

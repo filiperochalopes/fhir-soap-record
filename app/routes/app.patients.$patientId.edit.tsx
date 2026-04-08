@@ -8,8 +8,9 @@ import {
 import { requireUserSession } from "~/lib/auth.server";
 import { mergePatientRecords, savePatient } from "~/lib/patients.server";
 import { prisma } from "~/lib/prisma.server";
+import { getUiTimeZone } from "~/lib/settings.server";
 import { parsePatientForm } from "~/lib/validation/patients";
-import { formatDate, toDateInputValue } from "~/lib/utils";
+import { formatDate, formatPatientAge, toDateInputValue } from "~/lib/utils";
 
 function patientSearchFilter(query: string, patientId: number) {
   return {
@@ -42,6 +43,7 @@ export async function loader({
   const mergeQuery = url.searchParams.get("mergeQ")?.trim() ?? "";
   const mergedFromParam = url.searchParams.get("mergedFrom");
   const mergedFrom = mergedFromParam ? Number(mergedFromParam) : null;
+  const timeZone = await getUiTimeZone();
 
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
@@ -104,7 +106,7 @@ export async function loader({
     })),
   };
 
-  return { mergeCandidates, mergeQuery, mergedFrom, patient, formValues };
+  return { mergeCandidates, mergeQuery, mergedFrom, patient, formValues, timeZone };
 }
 
 export async function action({
@@ -187,12 +189,13 @@ function mergeCandidateLabel(candidate: {
 }
 
 export default function EditPatientRoute() {
-  const { mergeCandidates, mergeQuery, mergedFrom, patient, formValues } =
+  const { mergeCandidates, mergeQuery, mergedFrom, patient, formValues, timeZone } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const mergedFromPatient = mergedFrom
     ? patient.replaces.find((candidate) => candidate.id === mergedFrom)
     : null;
+  const patientAge = formatPatientAge(patient.birthDate, { timeZone });
 
   return (
     <section className="panel p-6">
@@ -203,6 +206,9 @@ export default function EditPatientRoute() {
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h2 className="text-3xl font-semibold">{patient.name}</h2>
+            {patientAge ? (
+              <span className="text-sm font-medium text-[color:var(--muted)]">{patientAge}</span>
+            ) : null}
             {patient.isDraft ? (
               <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
                 Draft

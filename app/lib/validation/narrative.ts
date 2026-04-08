@@ -10,10 +10,10 @@ export const narrativeNoteInputSchema = z.object({
 
 export type NarrativeNoteInput = z.infer<typeof narrativeNoteInputSchema>;
 
-export function parseNarrativeForm(formData: FormData) {
+export function parseNarrativeForm(formData: FormData, timeZone?: string) {
   return narrativeNoteInputSchema.parse({
     body: pickFirstString(formData.get("body")),
-    encounteredAt: parseDateTimeInput(pickFirstString(formData.get("encounteredAt"))),
+    encounteredAt: parseDateTimeInput(pickFirstString(formData.get("encounteredAt")), timeZone),
     title: pickFirstString(formData.get("title")),
   });
 }

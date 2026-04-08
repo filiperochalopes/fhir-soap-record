@@ -7,6 +7,12 @@ import { requireUserSession } from "~/lib/auth.server";
 import { getExportOverview } from "~/lib/export.server";
 import { importFhirBundle } from "~/lib/import.server";
 import { prisma } from "~/lib/prisma.server";
+import { getUiTimeZone, setUiTimeZone } from "~/lib/settings.server";
+import {
+  formatDateTime,
+  formatTimeZoneOffsetLabel,
+  isValidTimeZone,
+} from "~/lib/utils";
 import { bundleSchema } from "~/lib/validation/import";
 
 type ImportReportItem = {
@@ -21,10 +27,12 @@ type ImportReportItem = {
   };
 };
 
-type ImportActionData = {
+type SettingsActionData = {
   error?: string;
   importedAt?: string;
   results?: ImportReportItem[];
+  savedTimeZone?: string;
+  settingsError?: string;
   totals?: {
     created: number;
     errors: number;
@@ -37,15 +45,44 @@ type ImportActionData = {
 
 export async function loader({ request }: { request: Request }) {
   await requireUserSession(request);
-  return getExportOverview();
+  const [overview, timeZone] = await Promise.all([getExportOverview(), getUiTimeZone()]);
+
+  return {
+    ...overview,
+    timePreview: formatDateTime(new Date(), { timeZone }),
+    timeZone,
+    timeZoneOffset: formatTimeZoneOffsetLabel(timeZone),
+  };
 }
 
-export async function action({ request }: { request: Request }): Promise<ImportActionData> {
+export async function action({ request }: { request: Request }): Promise<SettingsActionData> {
   const auth = await requireUserSession(request);
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "import");
+
+  if (intent === "save-timezone") {
+    const rawTimeZone = String(formData.get("timeZone") ?? "").trim();
+
+    if (!rawTimeZone) {
+      return {
+        settingsError: "Enter a valid IANA timezone, for example America/Bahia.",
+      };
+    }
+
+    if (!isValidTimeZone(rawTimeZone)) {
+      return {
+        settingsError: "Invalid timezone. Use a valid IANA name such as America/Bahia.",
+      };
+    }
+
+    return {
+      savedTimeZone: await setUiTimeZone(rawTimeZone),
+    };
+  }
+
   const actor = await prisma.authUser.findUniqueOrThrow({
     where: { id: auth.user.id },
   });
-  const formData = await request.formData();
   const files = formData
     .getAll("bundles")
     .filter((value): value is File => value instanceof File && value.size > 0);
@@ -118,14 +155,15 @@ export async function action({ request }: { request: Request }): Promise<ImportA
   };
 }
 
-function ImportDropzone() {
+function ImportDropzone(props: { timeZone: string }) {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const isSubmitting = navigation.state === "submitting";
+  const isSubmitting =
+    navigation.state === "submitting" && navigation.formData?.get("intent") === "import";
 
   function syncFiles(files: FileList | null) {
     setSelectedFiles(files ? Array.from(files).map((file) => file.name) : []);
@@ -157,6 +195,7 @@ function ImportDropzone() {
       </div>
 
       <Form className="space-y-4" encType="multipart/form-data" method="post">
+        <input name="intent" type="hidden" value="import" />
         <label
           className={[
             "block rounded-[2rem] border-2 border-dashed px-6 py-10 text-center transition",
@@ -231,7 +270,7 @@ function ImportDropzone() {
             </p>
             <p className="text-sm text-[color:var(--muted)]">
               {actionData.importedAt
-                ? `Completed at ${new Date(actionData.importedAt).toLocaleString("en-US")}.`
+                ? `Completed at ${formatDateTime(actionData.importedAt, { timeZone: props.timeZone })}.`
                 : null}
             </p>
           </div>
@@ -305,8 +344,89 @@ function ImportDropzone() {
   );
 }
 
+function TimeZoneSettings(props: {
+  timePreview: string;
+  timeZone: string;
+  timeZoneOffset: string;
+}) {
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const isSubmitting =
+    navigation.state === "submitting" && navigation.formData?.get("intent") === "save-timezone";
+
+  return (
+    <section className="panel space-y-5 p-6">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+          Date and time
+        </p>
+        <h2 className="text-xl font-semibold tracking-tight">Timezone</h2>
+        <p className="max-w-3xl text-sm text-[color:var(--muted)]">
+          Datetime inputs and on-screen timestamps use this timezone. Stored values can remain in
+          GMT/UTC while the interface renders them in the selected zone.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--muted)]">
+            Current timezone
+          </div>
+          <div className="mt-2 font-mono text-sm">{props.timeZone}</div>
+        </div>
+        <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--muted)]">
+            Offset now
+          </div>
+          <div className="mt-2 text-sm font-semibold">{props.timeZoneOffset}</div>
+        </div>
+        <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--muted)]">
+            Current local time
+          </div>
+          <div className="mt-2 text-sm font-semibold">{props.timePreview}</div>
+        </div>
+      </div>
+
+      <Form className="space-y-4" method="post">
+        <input name="intent" type="hidden" value="save-timezone" />
+        <label className="block">
+          <span className="field-label">IANA timezone</span>
+          <input
+            defaultValue={props.timeZone}
+            name="timeZone"
+            placeholder="America/Bahia"
+            required
+          />
+        </label>
+        <p className="text-sm text-[color:var(--muted)]">
+          Default recomendado: <span className="font-mono">America/Bahia</span>
+        </p>
+
+        {actionData?.settingsError ? (
+          <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+            {actionData.settingsError}
+          </p>
+        ) : null}
+
+        {actionData?.savedTimeZone ? (
+          <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
+            Timezone updated to {actionData.savedTimeZone}.
+          </p>
+        ) : null}
+
+        <div className="flex justify-end">
+          <button className="button-primary" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Saving..." : "Save timezone"}
+          </button>
+        </div>
+      </Form>
+    </section>
+  );
+}
+
 export default function SettingsRoute() {
-  const { counts, namespace } = useLoaderData<typeof loader>();
+  const { counts, namespace, timePreview, timeZone, timeZoneOffset } = useLoaderData<typeof loader>();
 
   return (
     <div className="space-y-6">
@@ -325,6 +445,12 @@ export default function SettingsRoute() {
           <ThemeToggle />
         </div>
       </section>
+
+      <TimeZoneSettings
+        timePreview={timePreview}
+        timeZone={timeZone}
+        timeZoneOffset={timeZoneOffset}
+      />
 
       <section className="panel space-y-5 p-6">
         <div className="space-y-2">
@@ -378,7 +504,7 @@ export default function SettingsRoute() {
         </div>
       </section>
 
-      <ImportDropzone />
+      <ImportDropzone timeZone={timeZone} />
     </div>
   );
 }

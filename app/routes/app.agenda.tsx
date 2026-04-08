@@ -2,20 +2,27 @@ import { Form, useLoaderData } from "react-router";
 
 import { requireUserSession } from "~/lib/auth.server";
 import { prisma } from "~/lib/prisma.server";
-import { endOfDay, formatDateTime, startOfDay, toDateInputValue } from "~/lib/utils";
+import { getUiTimeZone } from "~/lib/settings.server";
+import {
+  formatDateTime,
+  getDayRangeForTimeZone,
+  getTodayDateInputValue,
+} from "~/lib/utils";
 
 export async function loader({ request }: { request: Request }) {
   await requireUserSession(request);
 
   const url = new URL(request.url);
   const dateValue = url.searchParams.get("date");
-  const baseDate = dateValue ? new Date(`${dateValue}T00:00:00`) : new Date();
+  const timeZone = await getUiTimeZone();
+  const selectedDate = dateValue ?? getTodayDateInputValue(timeZone);
+  const dayRange = getDayRangeForTimeZone(selectedDate, timeZone);
 
   const appointments = await prisma.appointment.findMany({
     where: {
       start: {
-        gte: startOfDay(baseDate),
-        lte: endOfDay(baseDate),
+        gte: dayRange.start,
+        lte: dayRange.end,
       },
     },
     include: {
@@ -28,12 +35,13 @@ export async function loader({ request }: { request: Request }) {
 
   return {
     appointments,
-    date: toDateInputValue(baseDate),
+    date: selectedDate,
+    timeZone,
   };
 }
 
 export default function AgendaRoute() {
-  const { appointments, date } = useLoaderData<typeof loader>();
+  const { appointments, date, timeZone } = useLoaderData<typeof loader>();
 
   return (
     <div className="space-y-6">
@@ -74,8 +82,8 @@ export default function AgendaRoute() {
                 appointments.map((appointment) => (
                   <tr className="border-t border-black/5 dark:border-white/10" key={appointment.id}>
                     <td className="px-5 py-4 font-medium">{appointment.patient.name}</td>
-                    <td className="px-5 py-4">{formatDateTime(appointment.start)}</td>
-                    <td className="px-5 py-4">{formatDateTime(appointment.end)}</td>
+                    <td className="px-5 py-4">{formatDateTime(appointment.start, { timeZone })}</td>
+                    <td className="px-5 py-4">{formatDateTime(appointment.end, { timeZone })}</td>
                     <td className="px-5 py-4 uppercase text-[color:var(--muted)]">
                       {appointment.status}
                     </td>
@@ -96,4 +104,3 @@ export default function AgendaRoute() {
     </div>
   );
 }
-

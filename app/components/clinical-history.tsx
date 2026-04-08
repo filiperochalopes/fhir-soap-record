@@ -16,7 +16,7 @@ export type ClinicalHistoryItem = {
   title: string;
 };
 
-export function ClinicalHistory(props: { notes: ClinicalHistoryItem[] }) {
+export function ClinicalHistory(props: { notes: ClinicalHistoryItem[]; timeZone: string }) {
   return (
     <details className="panel p-5">
       <summary className="cursor-pointer list-none text-lg font-semibold">
@@ -33,7 +33,7 @@ export function ClinicalHistory(props: { notes: ClinicalHistoryItem[] }) {
                 <div>
                   <h3 className="font-semibold">{note.title}</h3>
                   <p className="text-sm text-[color:var(--muted)]">
-                    {formatDateTime(note.encounteredAt)}
+                    {formatDateTime(note.encounteredAt, { timeZone: props.timeZone })}
                   </p>
                 </div>
                 <div className="text-right text-sm text-[color:var(--muted)]">
