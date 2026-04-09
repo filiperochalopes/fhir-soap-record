@@ -4,6 +4,7 @@ import {
   Link,
   redirect,
   useActionData,
+  useFetcher,
   useLoaderData,
   useNavigate,
   useSearchParams,
@@ -11,6 +12,7 @@ import {
 import { ZodError } from "zod";
 
 import { ClinicalHistory } from "~/components/clinical-history";
+import { ClinicalSummaryCard } from "~/components/clinical-summary";
 import { requireUserSession } from "~/lib/auth.server";
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import {
@@ -395,6 +397,7 @@ export async function loader({
     defaultEncounteredAt: toDateTimeLocalValue(new Date(), timeZone),
     patient,
     previousNotes,
+    soapNoteCount: previousSoapNotes.length,
     timeZone,
   };
 }
@@ -480,11 +483,13 @@ export async function action({
 }
 
 export default function SoapRoute() {
-  const { defaultEncounteredAt, patient, previousNotes, timeZone } =
+  const { defaultEncounteredAt, patient, previousNotes, soapNoteCount, timeZone } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const summaryFetcher = useFetcher<{ summary: import("~/lib/clinical-summary.server").ClinicalSummary | null }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [summaryRequested, setSummaryRequested] = useState(false);
   const patientAge = formatPatientAge(patient.birthDate, { timeZone });
   const savedType = searchParams.get("saved");
 
@@ -503,6 +508,22 @@ export default function SoapRoute() {
 
     navigate(`/patients/${patient.id}/soap`, { replace: true });
   }, [navigate, patient.id, savedType]);
+
+  useEffect(() => {
+    if (!soapNoteCount) {
+      return;
+    }
+
+    if (summaryFetcher.state !== "idle" || summaryFetcher.data) {
+      return;
+    }
+
+    setSummaryRequested(true);
+    summaryFetcher.load(`/patients/${patient.id}/summary`);
+  }, [patient.id, soapNoteCount, summaryFetcher]);
+
+  const summaryError =
+    summaryRequested && summaryFetcher.state === "idle" && summaryFetcher.data === undefined;
 
   return (
     <div className="space-y-6">
@@ -560,6 +581,13 @@ export default function SoapRoute() {
           surviving patient.
         </p>
       ) : null}
+
+      <ClinicalSummaryCard
+        error={summaryError}
+        isLoading={soapNoteCount > 0 && summaryFetcher.state !== "idle"}
+        soapNoteCount={soapNoteCount}
+        summary={summaryFetcher.data?.summary ?? null}
+      />
 
       <ClinicalHistory notes={previousNotes} timeZone={timeZone} />
 

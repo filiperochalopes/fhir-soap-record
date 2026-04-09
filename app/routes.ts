@@ -23,6 +23,7 @@ export default [
     route("patients/new", "routes/app.patients.new.tsx"),
     route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
     route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
+    route("patients/:patientId/summary", "routes/app.patients.$patientId.summary.ts"),
     route("agenda", "routes/app.agenda.tsx"),
     route("settings/export", "routes/app.settings.export.ts"),
     route("settings", "routes/app.settings.tsx"),

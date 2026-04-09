@@ -261,13 +261,63 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
           parameters: [
             { in: "query", name: "date", schema: { type: "string", format: "date" } },
             { in: "query", name: "patient", schema: { type: "string" } },
+            {
+              in: "query",
+              name: "_include",
+              schema: { type: "string", enum: ["Appointment:patient"] },
+              required: false,
+            },
           ],
           responses: {
             "200": {
               description: "FHIR Appointment searchset",
               content: {
                 "application/fhir+json": {
-                  schema: { type: "object" },
+                  example: {
+                    resourceType: "Bundle",
+                    type: "searchset",
+                    total: 1,
+                    entry: [
+                      {
+                        fullUrl: `${serverUrl}/fhir/Appointment/1`,
+                        resource: {
+                          resourceType: "Appointment",
+                          id: "1",
+                          status: "booked",
+                          start: "2026-03-10T13:30:00Z",
+                          end: "2026-03-10T14:00:00Z",
+                          appointmentType: {
+                            text: "routine",
+                          },
+                          participant: [
+                            {
+                              actor: {
+                                reference: "Patient/7",
+                                display: "Maria de Souza",
+                              },
+                              status: "accepted",
+                            },
+                          ],
+                        },
+                        search: {
+                          mode: "match",
+                        },
+                      },
+                      {
+                        fullUrl: `${serverUrl}/fhir/Patient/7`,
+                        resource: {
+                          resourceType: "Patient",
+                          id: "7",
+                          name: [{ text: "Maria de Souza" }],
+                          gender: "female",
+                          birthDate: "1980-09-14",
+                        },
+                        search: {
+                          mode: "include",
+                        },
+                      },
+                    ],
+                  },
                 },
               },
             },

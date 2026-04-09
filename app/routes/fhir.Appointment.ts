@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { saveAppointment } from "~/lib/appointments.server";
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome, toSearchBundle } from "~/lib/fhir/bundle";
+import { toFhirPatient } from "~/lib/fhir/patient";
 import { fhirJson } from "~/lib/fhir/capability";
 import { toFhirAppointment } from "~/lib/fhir/appointment";
 import { parseFhirAppointmentResource } from "~/lib/fhir/write";
@@ -15,6 +16,7 @@ export async function loader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const patient = url.searchParams.get("patient");
   const date = url.searchParams.get("date");
+  const includePatient = url.searchParams.getAll("_include").includes("Appointment:patient");
   const dateFilter = date ? new Date(`${date}T00:00:00`) : null;
 
   const appointments = await prisma.appointment.findMany({
@@ -30,7 +32,23 @@ export async function loader({ request }: { request: Request }) {
         : {}),
     },
     include: {
-      patient: true,
+      patient: {
+        include: {
+          contacts: true,
+          identifier: true,
+          mergedInto: {
+            select: {
+              id: true,
+            },
+          },
+          replaces: {
+            select: {
+              id: true,
+            },
+          },
+          telecom: true,
+        },
+      },
     },
     orderBy: {
       start: "asc",
@@ -42,6 +60,7 @@ export async function loader({ request }: { request: Request }) {
       "Appointment",
       appointments.map(toFhirAppointment),
       url.origin,
+      includePatient ? appointments.map((appointment) => toFhirPatient(appointment.patient)) : [],
     ),
   );
 }
