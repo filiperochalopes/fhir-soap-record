@@ -1,9 +1,12 @@
-export function fhirJson(data: unknown, status = 200) {
+export function fhirJson(data: unknown, status = 200, headers?: HeadersInit) {
+  const responseHeaders = new Headers(headers);
+  if (!responseHeaders.has("Content-Type")) {
+    responseHeaders.set("Content-Type", "application/fhir+json; charset=utf-8");
+  }
+
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: {
-      "Content-Type": "application/fhir+json; charset=utf-8",
-    },
+    headers: responseHeaders,
   });
 }
 
@@ -23,12 +26,31 @@ export function capabilityStatement(baseUrl: string) {
       name: "fhir-soap-record",
       version: "0.1.0",
     },
+    patchFormat: ["application/json-patch+json"],
     rest: [
       {
         mode: "server",
         resource: [
-          { type: "Patient", interaction: [{ code: "read" }, { code: "search-type" }] },
-          { type: "Appointment", interaction: [{ code: "read" }, { code: "search-type" }] },
+          {
+            type: "Patient",
+            interaction: [
+              { code: "read" },
+              { code: "search-type" },
+              { code: "create" },
+              { code: "update" },
+              { code: "patch" },
+            ],
+          },
+          {
+            type: "Appointment",
+            interaction: [
+              { code: "read" },
+              { code: "search-type" },
+              { code: "create" },
+              { code: "update" },
+              { code: "patch" },
+            ],
+          },
           { type: "Composition", interaction: [{ code: "read" }, { code: "search-type" }] },
           { type: "Encounter", interaction: [{ code: "read" }] },
           { type: "Observation", interaction: [{ code: "read" }] },

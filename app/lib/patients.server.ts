@@ -197,7 +197,12 @@ function assertPatientCanBeEdited(patient: Pick<Patient, "active" | "mergedIntoP
   }
 }
 
-export async function savePatient(input: PatientInput, actorUserId: number, patientId?: number) {
+export async function savePatient(
+  input: PatientInput,
+  actorUserId: number,
+  patientId?: number,
+  options?: { active?: boolean },
+) {
   return prisma.$transaction(async (tx) => {
     if (patientId) {
       const existingPatient = await tx.patient.findUnique({
@@ -217,6 +222,7 @@ export async function savePatient(input: PatientInput, actorUserId: number, pati
       ? await tx.patient.update({
           where: { id: patientId },
           data: {
+            ...(typeof options?.active === "boolean" ? { active: options.active } : {}),
             birthDate: input.birthDate,
             contacts: {
               deleteMany: {},
@@ -237,14 +243,37 @@ export async function savePatient(input: PatientInput, actorUserId: number, pati
           include: {
             contacts: true,
             identifier: true,
+            mergedInto: {
+              select: {
+                id: true,
+              },
+            },
+            replaces: {
+              select: {
+                id: true,
+              },
+            },
             telecom: true,
           },
         })
       : await tx.patient.create({
-          data: patientNestedWrite(input),
+          data: {
+            active: options?.active ?? true,
+            ...patientNestedWrite(input),
+          },
           include: {
             contacts: true,
             identifier: true,
+            mergedInto: {
+              select: {
+                id: true,
+              },
+            },
+            replaces: {
+              select: {
+                id: true,
+              },
+            },
             telecom: true,
           },
         });

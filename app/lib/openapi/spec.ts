@@ -94,6 +94,51 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
             },
           },
         },
+        post: {
+          summary: "Create patient",
+          requestBody: {
+            required: true,
+            content: {
+              "application/fhir+json": {
+                example: {
+                  resourceType: "Patient",
+                  active: true,
+                  identifier: [
+                    {
+                      system: "https://www.gov.br/cpf",
+                      value: "11122233344",
+                    },
+                  ],
+                  name: [{ text: "Maria de Souza" }],
+                  gender: "female",
+                  birthDate: "1980-09-14",
+                  telecom: [
+                    {
+                      system: "phone",
+                      value: "+55 71 99999-0000",
+                    },
+                  ],
+                  contact: [
+                    {
+                      relationship: [{ text: "Brother" }],
+                      name: { text: "Joao de Souza" },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "FHIR Patient resource created",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
       },
       "/fhir/Patient/{id}": {
         get: {
@@ -109,6 +154,98 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
           responses: {
             "200": {
               description: "FHIR Patient resource",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          summary: "Update patient",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/fhir+json": {
+                example: {
+                  resourceType: "Patient",
+                  id: "1",
+                  active: true,
+                  identifier: [
+                    {
+                      system: "https://www.gov.br/cpf",
+                      value: "11122233344",
+                    },
+                  ],
+                  name: [{ text: "Maria de Souza" }],
+                  gender: "female",
+                  birthDate: "1980-09-14",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "FHIR Patient resource updated",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+        patch: {
+          summary: "Patch patient",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json-patch+json": {
+                example: [
+                  {
+                    op: "replace",
+                    path: "/telecom",
+                    value: [
+                      {
+                        system: "phone",
+                        value: "+55 71 98888-0000",
+                      },
+                    ],
+                  },
+                ],
+              },
+              "application/merge-patch+json": {
+                example: {
+                  telecom: [
+                    {
+                      system: "phone",
+                      value: "+55 71 98888-0000",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "FHIR Patient resource patched",
               content: {
                 "application/fhir+json": {
                   schema: { type: "object" },
@@ -136,6 +273,43 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
             },
           },
         },
+        post: {
+          summary: "Create appointment",
+          requestBody: {
+            required: true,
+            content: {
+              "application/fhir+json": {
+                example: {
+                  resourceType: "Appointment",
+                  status: "booked",
+                  start: "2026-03-10T13:30:00Z",
+                  end: "2026-03-10T14:00:00Z",
+                  appointmentType: {
+                    text: "routine",
+                  },
+                  participant: [
+                    {
+                      actor: {
+                        reference: "Patient/1",
+                      },
+                      status: "accepted",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "FHIR Appointment resource created",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
       },
       "/fhir/Appointment/{id}": {
         get: {
@@ -151,6 +325,92 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
           responses: {
             "200": {
               description: "FHIR Appointment resource",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          summary: "Update appointment",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/fhir+json": {
+                example: {
+                  resourceType: "Appointment",
+                  id: "1",
+                  status: "booked",
+                  start: "2026-03-10T13:30:00Z",
+                  end: "2026-03-10T14:00:00Z",
+                  appointmentType: {
+                    text: "routine",
+                  },
+                  participant: [
+                    {
+                      actor: {
+                        reference: "Patient/1",
+                      },
+                      status: "accepted",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "FHIR Appointment resource updated",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+        patch: {
+          summary: "Patch appointment",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json-patch+json": {
+                example: [
+                  {
+                    op: "replace",
+                    path: "/status",
+                    value: "cancelled",
+                  },
+                ],
+              },
+              "application/merge-patch+json": {
+                example: {
+                  status: "cancelled",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "FHIR Appointment resource patched",
               content: {
                 "application/fhir+json": {
                   schema: { type: "object" },

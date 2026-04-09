@@ -221,8 +221,8 @@ Implemented MVP screens:
 Implemented API surface:
 
 - `GET /fhir/metadata`
-- patient FHIR routes
-- appointment FHIR routes
+- patient FHIR routes with `GET`, `POST`, `PUT`, and `PATCH`
+- appointment FHIR routes with `GET`, `POST`, `PUT`, and `PATCH`
 - SOAP-derived FHIR routes through `Composition`, `Encounter`, `Observation`, `Condition`, and `ClinicalImpression`
 - narrative clinical notes exposed through `Composition`
 - `POST /fhir`
