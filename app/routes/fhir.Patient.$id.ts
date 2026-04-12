@@ -4,31 +4,9 @@ import { ZodError } from "zod";
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
-import { toFhirPatient } from "~/lib/fhir/patient";
-import { applyFhirPatch, getResourceId, parseFhirPatientResource } from "~/lib/fhir/write";
-import { PATIENT_DUPLICATE_IDENTITY_MESSAGE, savePatient } from "~/lib/patients.server";
-import { prisma } from "~/lib/prisma.server";
-
-async function loadPatient(patientId: number) {
-  return prisma.patient.findUnique({
-    where: { id: patientId },
-    include: {
-      contacts: true,
-      identifier: true,
-      mergedInto: {
-        select: {
-          id: true,
-        },
-      },
-      replaces: {
-        select: {
-          id: true,
-        },
-      },
-      telecom: true,
-    },
-  });
-}
+import { getFhirStore } from "~/lib/fhir/store.server";
+import { applyFhirPatch, getResourceId } from "~/lib/fhir/write";
+import { PATIENT_DUPLICATE_IDENTITY_MESSAGE } from "~/lib/patients.server";
 
 export async function loader({
   params,
@@ -39,13 +17,13 @@ export async function loader({
 }) {
   await requireApiUser(request);
 
-  const patient = await loadPatient(Number(params.id));
+  const patient = params.id ? await getFhirStore().getPatient(params.id) : null;
 
   if (!patient) {
     return fhirJson(operationOutcome("error", "not-found", "Patient not found"), 404);
   }
 
-  return fhirJson(toFhirPatient(patient));
+  return fhirJson(patient);
 }
 
 export async function action({
@@ -66,13 +44,11 @@ export async function action({
   }
 
   const auth = await requireApiUser(request);
-  const patientId = Number(params.id);
-
-  if (!Number.isInteger(patientId) || patientId <= 0) {
+  if (!params.id) {
     return fhirJson(operationOutcome("error", "not-found", "Patient not found"), 404);
   }
 
-  const existingPatient = await loadPatient(patientId);
+  const existingPatient = await getFhirStore().getPatient(params.id);
   if (!existingPatient) {
     return fhirJson(operationOutcome("error", "not-found", "Patient not found"), 404);
   }
@@ -82,26 +58,23 @@ export async function action({
     const resource =
       request.method === "PATCH"
         ? applyFhirPatch(
-            toFhirPatient(existingPatient),
+            existingPatient,
             body,
             request.headers.get("content-type"),
           )
         : body;
     const bodyId = getResourceId(resource);
 
-    if (bodyId && bodyId !== String(patientId)) {
+    if (bodyId && bodyId !== params.id) {
       return fhirJson(
         operationOutcome("error", "invalid", "Patient.id must match the request path."),
         400,
       );
     }
 
-    const payload = parseFhirPatientResource(resource);
-    const patient = await savePatient(payload.input, auth.user.id, patientId, {
-      active: payload.active,
-    });
+    const patient = await getFhirStore().savePatient(resource, auth.user.id, params.id);
 
-    return fhirJson(toFhirPatient(patient));
+    return fhirJson(patient);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return fhirJson(operationOutcome("error", "invalid", "Invalid JSON body."), 400);

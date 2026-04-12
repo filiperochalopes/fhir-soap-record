@@ -1,9 +1,7 @@
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
-import { parseSoapClinicalImpressionFhirId } from "~/lib/fhir/ids";
-import { toFhirClinicalImpression } from "~/lib/fhir/soap";
-import { getSoapNoteById } from "~/lib/soap-notes.server";
+import { getFhirStore } from "~/lib/fhir/store.server";
 
 export async function loader({
   params,
@@ -14,14 +12,15 @@ export async function loader({
 }) {
   await requireApiUser(request);
 
-  const noteId = params.id ? parseSoapClinicalImpressionFhirId(params.id) : null;
-  const note = noteId ? await getSoapNoteById(noteId) : null;
-  if (!note) {
+  const resource = params.id
+    ? await getFhirStore().getRelatedResource("ClinicalImpression", params.id)
+    : null;
+  if (!resource) {
     return fhirJson(
       operationOutcome("error", "not-found", "ClinicalImpression not found"),
       404,
     );
   }
 
-  return fhirJson(toFhirClinicalImpression(note));
+  return fhirJson(resource);
 }

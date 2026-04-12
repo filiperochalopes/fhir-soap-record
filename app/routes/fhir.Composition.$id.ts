@@ -1,11 +1,7 @@
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
-import { parseCompositionFhirId } from "~/lib/fhir/ids";
-import { toFhirNarrativeComposition } from "~/lib/fhir/narrative";
-import { toFhirComposition } from "~/lib/fhir/soap";
-import { getNarrativeNoteById } from "~/lib/narrative-notes.server";
-import { getSoapNoteById } from "~/lib/soap-notes.server";
+import { getFhirStore } from "~/lib/fhir/store.server";
 
 export async function loader({
   params,
@@ -20,24 +16,10 @@ export async function loader({
     return fhirJson(operationOutcome("error", "not-found", "Composition not found"), 404);
   }
 
-  const parsedId = parseCompositionFhirId(params.id);
-  if (!parsedId) {
+  const resource = await getFhirStore().getRelatedResource("Composition", params.id);
+  if (!resource) {
     return fhirJson(operationOutcome("error", "not-found", "Composition not found"), 404);
   }
 
-  if (parsedId.kind === "soap") {
-    const note = await getSoapNoteById(parsedId.noteId);
-    if (!note) {
-      return fhirJson(operationOutcome("error", "not-found", "Composition not found"), 404);
-    }
-
-    return fhirJson(toFhirComposition(note));
-  }
-
-  const note = await getNarrativeNoteById(parsedId.noteId);
-  if (!note) {
-    return fhirJson(operationOutcome("error", "not-found", "Composition not found"), 404);
-  }
-
-  return fhirJson(toFhirNarrativeComposition(note));
+  return fhirJson(resource);
 }

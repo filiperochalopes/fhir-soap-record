@@ -1,8 +1,7 @@
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
-import { importFhirBundle } from "~/lib/import.server";
-import { prisma } from "~/lib/prisma.server";
+import { getFhirStore } from "~/lib/fhir/store.server";
 import { bundleSchema } from "~/lib/validation/import";
 
 export async function loader() {
@@ -20,10 +19,7 @@ export async function action({ request }: { request: Request }) {
 
   try {
     const bundle = bundleSchema.parse(await request.json());
-    const actor = await prisma.authUser.findUniqueOrThrow({
-      where: { id: auth.user.id },
-    });
-    const summary = await importFhirBundle(bundle, actor);
+    const summary = await getFhirStore().importBundle(bundle, auth.user.id);
 
     return fhirJson(
       operationOutcome(

@@ -1,25 +1,10 @@
 import { ZodError } from "zod";
 
-import { saveAppointment } from "~/lib/appointments.server";
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome } from "~/lib/fhir/bundle";
-import { toFhirAppointment } from "~/lib/fhir/appointment";
 import { fhirJson } from "~/lib/fhir/capability";
-import {
-  applyFhirPatch,
-  getResourceId,
-  parseFhirAppointmentResource,
-} from "~/lib/fhir/write";
-import { prisma } from "~/lib/prisma.server";
-
-async function loadAppointment(appointmentId: number) {
-  return prisma.appointment.findUnique({
-    where: { id: appointmentId },
-    include: {
-      patient: true,
-    },
-  });
-}
+import { getFhirStore } from "~/lib/fhir/store.server";
+import { applyFhirPatch, getResourceId } from "~/lib/fhir/write";
 
 export async function loader({
   params,
@@ -30,13 +15,13 @@ export async function loader({
 }) {
   await requireApiUser(request);
 
-  const appointment = await loadAppointment(Number(params.id));
+  const appointment = params.id ? await getFhirStore().getAppointment(params.id) : null;
 
   if (!appointment) {
     return fhirJson(operationOutcome("error", "not-found", "Appointment not found"), 404);
   }
 
-  return fhirJson(toFhirAppointment(appointment));
+  return fhirJson(appointment);
 }
 
 export async function action({
@@ -57,13 +42,11 @@ export async function action({
   }
 
   const auth = await requireApiUser(request);
-  const appointmentId = Number(params.id);
-
-  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+  if (!params.id) {
     return fhirJson(operationOutcome("error", "not-found", "Appointment not found"), 404);
   }
 
-  const existingAppointment = await loadAppointment(appointmentId);
+  const existingAppointment = await getFhirStore().getAppointment(params.id);
   if (!existingAppointment) {
     return fhirJson(operationOutcome("error", "not-found", "Appointment not found"), 404);
   }
@@ -73,24 +56,27 @@ export async function action({
     const resource =
       request.method === "PATCH"
         ? applyFhirPatch(
-            toFhirAppointment(existingAppointment),
+            existingAppointment,
             body,
             request.headers.get("content-type"),
           )
         : body;
     const bodyId = getResourceId(resource);
 
-    if (bodyId && bodyId !== String(appointmentId)) {
+    if (bodyId && bodyId !== params.id) {
       return fhirJson(
         operationOutcome("error", "invalid", "Appointment.id must match the request path."),
         400,
       );
     }
 
-    const payload = parseFhirAppointmentResource(resource);
-    const appointment = await saveAppointment(payload.input, auth.user.id, appointmentId);
+    const appointment = await getFhirStore().saveAppointment(
+      resource,
+      auth.user.id,
+      params.id,
+    );
 
-    return fhirJson(toFhirAppointment(appointment));
+    return fhirJson(appointment);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return fhirJson(operationOutcome("error", "invalid", "Invalid JSON body."), 400);

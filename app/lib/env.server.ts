@@ -4,6 +4,13 @@ const envSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
   COOKIE_NAME: z.string().default("clinic_token"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  DRY_RUN: z.preprocess(
+    (value) =>
+      typeof value === "string"
+        ? value.trim().toLowerCase() === "true"
+        : value,
+    z.boolean().default(false),
+  ),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
@@ -11,4 +18,3 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-

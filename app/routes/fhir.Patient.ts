@@ -4,49 +4,20 @@ import { ZodError } from "zod";
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome, toSearchBundle } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
-import { toFhirPatient } from "~/lib/fhir/patient";
-import { parseFhirPatientResource } from "~/lib/fhir/write";
-import { PATIENT_DUPLICATE_IDENTITY_MESSAGE, savePatient } from "~/lib/patients.server";
-import { prisma } from "~/lib/prisma.server";
+import { getFhirStore } from "~/lib/fhir/store.server";
+import { PATIENT_DUPLICATE_IDENTITY_MESSAGE } from "~/lib/patients.server";
 
 export async function loader({ request }: { request: Request }) {
   await requireApiUser(request);
 
   const url = new URL(request.url);
   const name = url.searchParams.get("name")?.trim();
-
-  const patients = await prisma.patient.findMany({
-    where: name
-      ? {
-          active: true,
-          name: { contains: name },
-        }
-      : { active: true },
-    include: {
-      contacts: true,
-      identifier: true,
-      mergedInto: {
-        select: {
-          id: true,
-        },
-      },
-      replaces: {
-        select: {
-          id: true,
-        },
-      },
-      telecom: true,
-    },
-    take: 100,
-    orderBy: {
-      name: "asc",
-    },
-  });
+  const patients = await getFhirStore().searchPatients({ name: name || null });
 
   return fhirJson(
     toSearchBundle(
       "Patient",
-      patients.map(toFhirPatient),
+      patients,
       url.origin,
     ),
   );
@@ -66,13 +37,10 @@ export async function action({ request }: { request: Request }) {
   const auth = await requireApiUser(request);
 
   try {
-    const payload = parseFhirPatientResource(await request.json());
-    const patient = await savePatient(payload.input, auth.user.id, undefined, {
-      active: payload.active,
-    });
+    const patient = await getFhirStore().savePatient(await request.json(), auth.user.id);
     const url = new URL(request.url);
 
-    return fhirJson(toFhirPatient(patient), 201, {
+    return fhirJson(patient, 201, {
       Location: `${url.origin}/fhir/Patient/${patient.id}`,
     });
   } catch (error) {

@@ -70,10 +70,12 @@ export async function authenticateToken(rawToken: string | null | undefined) {
     return null;
   }
 
-  await prisma.authToken.update({
-    where: { id: authToken.id },
-    data: { lastUsedAt: new Date() },
-  });
+  if (!env.DRY_RUN) {
+    await prisma.authToken.update({
+      where: { id: authToken.id },
+      data: { lastUsedAt: new Date() },
+    });
+  }
 
   return {
     tokenId: authToken.id,
