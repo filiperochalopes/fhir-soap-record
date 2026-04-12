@@ -4,7 +4,7 @@ const envSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
   COOKIE_NAME: z.string().default("clinic_token"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  DRY_RUN: z.preprocess(
+  API_DRY_RUN: z.preprocess(
     (value) =>
       typeof value === "string"
         ? value.trim().toLowerCase() === "true"

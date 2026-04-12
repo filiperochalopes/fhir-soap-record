@@ -1,3 +1,5 @@
+import { fhirAppErrorCoding, type FhirAppErrorCode } from "~/lib/fhir/errors";
+
 type SearchBundleResource = {
   id: number | string;
   resourceType?: string;
@@ -61,6 +63,10 @@ export function operationOutcome(
   code: string,
   details: string,
   diagnostics?: string,
+  options?: {
+    appCode?: FhirAppErrorCode;
+    expression?: string[];
+  },
 ) {
   return {
     resourceType: "OperationOutcome",
@@ -69,8 +75,14 @@ export function operationOutcome(
         severity,
         code,
         details: {
+          ...(options?.appCode
+            ? {
+                coding: [fhirAppErrorCoding(options.appCode)],
+              }
+            : {}),
           text: details,
         },
+        ...(options?.expression?.length ? { expression: options.expression } : {}),
         ...(diagnostics ? { diagnostics } : {}),
       },
     ],

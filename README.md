@@ -125,7 +125,7 @@ pnpm prisma:migrate:deploy
 - `DB_PASS`: password used by the bundled MySQL container and default local `DATABASE_URL`
 - `PORT`: Node application port
 - `COOKIE_NAME`: auth cookie name for web login
-- `DRY_RUN`: when `true`, FHIR API writes are stored in process memory instead of Prisma; restarting the app/container clears the dry-run data
+- `API_DRY_RUN`: when `true`, FHIR API writes are stored in process memory instead of Prisma; restarting the app/container clears the dry-run data
 
 ## Prisma Usage
 

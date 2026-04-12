@@ -70,7 +70,7 @@ export async function authenticateToken(rawToken: string | null | undefined) {
     return null;
   }
 
-  if (!env.DRY_RUN) {
+  if (!env.API_DRY_RUN) {
     await prisma.authToken.update({
       where: { id: authToken.id },
       data: { lastUsedAt: new Date() },

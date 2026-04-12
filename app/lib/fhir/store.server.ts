@@ -911,7 +911,7 @@ class MemoryFhirStore implements FhirStore {
   ) {
     const map = this.relatedResources.get(resourceType);
     if (!map) {
-      throw new Error(`${resourceType} is not supported by DRY_RUN storage.`);
+      throw new Error(`${resourceType} is not supported by API_DRY_RUN storage.`);
     }
 
     const id = this.assignId(resourceType, map, preferredId);
@@ -948,5 +948,5 @@ const prismaFhirStore = new PrismaFhirStore();
 const memoryFhirStore = new MemoryFhirStore();
 
 export function getFhirStore() {
-  return env.DRY_RUN ? memoryFhirStore : prismaFhirStore;
+  return env.API_DRY_RUN ? memoryFhirStore : prismaFhirStore;
 }

@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { requireApiUser } from "~/lib/auth.server";
 import { operationOutcome, toSearchBundle } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
+import { FHIR_APP_ERROR_CODES } from "~/lib/fhir/errors";
 import { getFhirStore } from "~/lib/fhir/store.server";
 import { PATIENT_DUPLICATE_IDENTITY_MESSAGE } from "~/lib/patients.server";
 
@@ -61,14 +62,32 @@ export async function action({ request }: { request: Request }) {
 
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return fhirJson(
-        operationOutcome("error", "conflict", "Patient identifiers must be unique."),
+        operationOutcome(
+          "error",
+          "duplicate",
+          "Patient identifier already exists.",
+          undefined,
+          {
+            appCode: FHIR_APP_ERROR_CODES.patientIdentifierDuplicate,
+            expression: ["Patient.identifier"],
+          },
+        ),
         409,
       );
     }
 
     if (error instanceof Error && error.message === PATIENT_DUPLICATE_IDENTITY_MESSAGE) {
       return fhirJson(
-        operationOutcome("error", "conflict", PATIENT_DUPLICATE_IDENTITY_MESSAGE),
+        operationOutcome(
+          "error",
+          "duplicate",
+          PATIENT_DUPLICATE_IDENTITY_MESSAGE,
+          undefined,
+          {
+            appCode: FHIR_APP_ERROR_CODES.patientNameBirthDateDuplicate,
+            expression: ["Patient.name", "Patient.birthDate"],
+          },
+        ),
         409,
       );
     }
