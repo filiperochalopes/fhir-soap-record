@@ -6,7 +6,11 @@ import {
   type PatientFormValues,
 } from "~/components/patient-form-editor";
 import { requireUserSession } from "~/lib/auth.server";
-import { mergePatientRecords, savePatient } from "~/lib/patients.server";
+import {
+  mergePatientRecords,
+  PATIENT_DUPLICATE_IDENTITY_MESSAGE,
+  savePatient,
+} from "~/lib/patients.server";
 import { prisma } from "~/lib/prisma.server";
 import { getUiTimeZone } from "~/lib/settings.server";
 import { parsePatientForm } from "~/lib/validation/patients";
@@ -164,7 +168,9 @@ export async function action({
 
     return {
       error:
-        error instanceof Error && error.message === mergedPatientMessage
+        error instanceof Error &&
+        (error.message === mergedPatientMessage ||
+          error.message === PATIENT_DUPLICATE_IDENTITY_MESSAGE)
           ? error.message
           : "Could not update the patient. Check duplicated identifiers.",
     };

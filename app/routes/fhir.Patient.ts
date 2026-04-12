@@ -6,7 +6,7 @@ import { operationOutcome, toSearchBundle } from "~/lib/fhir/bundle";
 import { fhirJson } from "~/lib/fhir/capability";
 import { toFhirPatient } from "~/lib/fhir/patient";
 import { parseFhirPatientResource } from "~/lib/fhir/write";
-import { savePatient } from "~/lib/patients.server";
+import { PATIENT_DUPLICATE_IDENTITY_MESSAGE, savePatient } from "~/lib/patients.server";
 import { prisma } from "~/lib/prisma.server";
 
 export async function loader({ request }: { request: Request }) {
@@ -94,6 +94,13 @@ export async function action({ request }: { request: Request }) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return fhirJson(
         operationOutcome("error", "conflict", "Patient identifiers must be unique."),
+        409,
+      );
+    }
+
+    if (error instanceof Error && error.message === PATIENT_DUPLICATE_IDENTITY_MESSAGE) {
+      return fhirJson(
+        operationOutcome("error", "conflict", PATIENT_DUPLICATE_IDENTITY_MESSAGE),
         409,
       );
     }

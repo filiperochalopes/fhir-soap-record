@@ -6,7 +6,7 @@ import {
   type PatientFormValues,
 } from "~/components/patient-form-editor";
 import { requireUserSession } from "~/lib/auth.server";
-import { savePatient } from "~/lib/patients.server";
+import { PATIENT_DUPLICATE_IDENTITY_MESSAGE, savePatient } from "~/lib/patients.server";
 import { parsePatientForm } from "~/lib/validation/patients";
 
 const emptyValues: PatientFormValues = {
@@ -35,6 +35,12 @@ export async function action({ request }: { request: Request }) {
     if (error instanceof ZodError) {
       return {
         error: error.issues[0]?.message ?? "Invalid patient data.",
+      };
+    }
+
+    if (error instanceof Error && error.message === PATIENT_DUPLICATE_IDENTITY_MESSAGE) {
+      return {
+        error: PATIENT_DUPLICATE_IDENTITY_MESSAGE,
       };
     }
 

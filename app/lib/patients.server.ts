@@ -13,6 +13,9 @@ type ImportedPatientMatch = Prisma.PatientGetPayload<{
   };
 }>;
 
+export const PATIENT_DUPLICATE_IDENTITY_MESSAGE =
+  "A patient with this name and birth date already exists.";
+
 function patientNestedWrite(input: PatientInput) {
   return {
     birthDate: input.birthDate,
@@ -197,6 +200,32 @@ function assertPatientCanBeEdited(patient: Pick<Patient, "active" | "mergedIntoP
   }
 }
 
+async function assertPatientNameBirthDateIsUnique(
+  input: Pick<PatientInput, "birthDate" | "name">,
+  db: PatientClient,
+  patientId?: number,
+) {
+  if (!input.birthDate) {
+    return;
+  }
+
+  const duplicate = await db.patient.findFirst({
+    where: {
+      active: true,
+      birthDate: input.birthDate,
+      name: input.name,
+      ...(patientId ? { id: { not: patientId } } : {}),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (duplicate) {
+    throw new Error(PATIENT_DUPLICATE_IDENTITY_MESSAGE);
+  }
+}
+
 export async function savePatient(
   input: PatientInput,
   actorUserId: number,
@@ -217,6 +246,8 @@ export async function savePatient(
         assertPatientCanBeEdited(existingPatient);
       }
     }
+
+    await assertPatientNameBirthDateIsUnique(input, tx, patientId);
 
     const patient = patientId
       ? await tx.patient.update({
