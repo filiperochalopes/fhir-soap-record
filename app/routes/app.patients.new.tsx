@@ -10,6 +10,7 @@ import { PATIENT_DUPLICATE_IDENTITY_MESSAGE, savePatient } from "~/lib/patients.
 import { parsePatientForm } from "~/lib/validation/patients";
 
 const emptyValues: PatientFormValues = {
+  active: true,
   birthDate: "",
   contacts: [{ name: "", relationship: "" }],
   gender: "female",

@@ -11,6 +11,7 @@ type ContactItem = {
 };
 
 export type PatientFormValues = {
+  active: boolean;
   birthDate: string;
   contacts: ContactItem[];
   gender: string;
@@ -123,7 +124,10 @@ function ContactRows(props: {
   );
 }
 
-export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
+export function PatientFormEditor(props: {
+  initialValues: PatientFormValues;
+  showActiveField?: boolean;
+}) {
   const [isDraft, setIsDraft] = useState<boolean>(props.initialValues.isDraft);
   const [identifiers, setIdentifiers] = useState<PairItem[]>(
     props.initialValues.identifiers.length ? props.initialValues.identifiers : [{ left: "", right: "" }],
@@ -177,6 +181,18 @@ export function PatientFormEditor(props: { initialValues: PatientFormValues }) {
             </div>
           </div>
         </label>
+        {props.showActiveField ? (
+          <label className="block md:col-span-2">
+            <span className="field-label">Status</span>
+            <select defaultValue={props.initialValues.active ? "true" : "false"} name="active">
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+            <span className="mt-2 block text-sm text-[color:var(--muted)]">
+              Inactive patients are kept in the database but no longer appear in patient search.
+            </span>
+          </label>
+        ) : null}
       </div>
 
       <section className="space-y-3">

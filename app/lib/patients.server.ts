@@ -233,6 +233,8 @@ export async function savePatient(
   options?: { active?: boolean },
 ) {
   return prisma.$transaction(async (tx) => {
+    let nextActive = options?.active ?? true;
+
     if (patientId) {
       const existingPatient = await tx.patient.findUnique({
         where: { id: patientId },
@@ -244,10 +246,13 @@ export async function savePatient(
 
       if (existingPatient) {
         assertPatientCanBeEdited(existingPatient);
+        nextActive = options?.active ?? existingPatient.active;
       }
     }
 
-    await assertPatientNameBirthDateIsUnique(input, tx, patientId);
+    if (nextActive) {
+      await assertPatientNameBirthDateIsUnique(input, tx, patientId);
+    }
 
     const patient = patientId
       ? await tx.patient.update({

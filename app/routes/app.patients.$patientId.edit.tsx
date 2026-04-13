@@ -92,6 +92,7 @@ export async function loader({
       : [];
 
   const formValues: PatientFormValues = {
+    active: patient.active,
     birthDate: toDateInputValue(patient.birthDate),
     contacts: patient.contacts.map((contact) => ({
       name: contact.name,
@@ -145,7 +146,8 @@ export async function action({
     }
 
     const input = parsePatientForm(formData);
-    await savePatient(input, auth.user.id, patientId);
+    const active = formData.get("active") !== "false";
+    await savePatient(input, auth.user.id, patientId, { active });
     throw redirect(`/patients/${params.patientId}/edit`);
   } catch (error) {
     if (error instanceof Response) {
@@ -285,10 +287,10 @@ export default function EditPatientRoute() {
         </p>
       ) : null}
 
-      {patient.active ? (
+      {patient.active || !patient.mergedInto ? (
         <>
           <Form className="mt-8 space-y-8" method="post">
-            <PatientFormEditor initialValues={formValues} />
+            <PatientFormEditor initialValues={formValues} showActiveField />
             <div className="flex justify-end">
               <button className="button-primary" type="submit">
                 Update patient
@@ -296,61 +298,63 @@ export default function EditPatientRoute() {
             </div>
           </Form>
 
-          <section className="mt-8 rounded-3xl border border-black/10 p-6">
-            <div>
-              <h3 className="text-2xl font-semibold">Merge into another patient</h3>
-              <p className="mt-2 text-sm text-[color:var(--muted)]">
-                This patient will become inactive and gain a FHIR `replaced-by` link to the
-                selected survivor. Existing notes and appointments are kept on their current
-                records.
-              </p>
-            </div>
+          {patient.active ? (
+            <section className="mt-8 rounded-3xl border border-black/10 p-6">
+              <div>
+                <h3 className="text-2xl font-semibold">Merge into another patient</h3>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">
+                  This patient will become inactive and gain a FHIR `replaced-by` link to the
+                  selected survivor. Existing notes and appointments are kept on their current
+                  records.
+                </p>
+              </div>
 
-            <Form className="mt-6 flex flex-col gap-3 md:flex-row" method="get">
-              <input
-                className="w-full"
-                defaultValue={mergeQuery}
-                name="mergeQ"
-                placeholder="Search active patient by name or identifier"
-              />
-              <button className="button-secondary" type="submit">
-                Search target
-              </button>
-            </Form>
-
-            {actionData?.mergeError ? (
-              <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
-                {actionData.mergeError}
-              </p>
-            ) : null}
-
-            {mergeQuery && !mergeCandidates.length ? (
-              <p className="mt-4 text-sm text-[color:var(--muted)]">
-                No active patient matched this search.
-              </p>
-            ) : null}
-
-            {mergeCandidates.length ? (
-              <Form className="mt-6 space-y-5" method="post">
-                <input name="intent" type="hidden" value="merge" />
-                <label className="block">
-                  <span className="field-label">Target patient</span>
-                  <select defaultValue={String(mergeCandidates[0].id)} name="targetPatientId">
-                    {mergeCandidates.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {mergeCandidateLabel(candidate)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex justify-end">
-                  <button className="button-secondary" type="submit">
-                    Merge patient
-                  </button>
-                </div>
+              <Form className="mt-6 flex flex-col gap-3 md:flex-row" method="get">
+                <input
+                  className="w-full"
+                  defaultValue={mergeQuery}
+                  name="mergeQ"
+                  placeholder="Search active patient by name or identifier"
+                />
+                <button className="button-secondary" type="submit">
+                  Search target
+                </button>
               </Form>
-            ) : null}
-          </section>
+
+              {actionData?.mergeError ? (
+                <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+                  {actionData.mergeError}
+                </p>
+              ) : null}
+
+              {mergeQuery && !mergeCandidates.length ? (
+                <p className="mt-4 text-sm text-[color:var(--muted)]">
+                  No active patient matched this search.
+                </p>
+              ) : null}
+
+              {mergeCandidates.length ? (
+                <Form className="mt-6 space-y-5" method="post">
+                  <input name="intent" type="hidden" value="merge" />
+                  <label className="block">
+                    <span className="field-label">Target patient</span>
+                    <select defaultValue={String(mergeCandidates[0].id)} name="targetPatientId">
+                      {mergeCandidates.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {mergeCandidateLabel(candidate)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex justify-end">
+                    <button className="button-secondary" type="submit">
+                      Merge patient
+                    </button>
+                  </div>
+                </Form>
+              ) : null}
+            </section>
+          ) : null}
         </>
       ) : null}
     </section>
