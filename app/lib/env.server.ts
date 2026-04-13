@@ -18,3 +18,9 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
+if (env.API_DRY_RUN) {
+  console.warn(
+    "[DRY RUN] API_DRY_RUN=true — FHIR API writes are stored in memory only. Data will be lost on restart.",
+  );
+}
