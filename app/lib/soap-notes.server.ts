@@ -7,6 +7,7 @@ import type { SoapNoteInput } from "~/lib/validation/soap";
 type SoapClient = PrismaClient | Prisma.TransactionClient;
 
 type SoapCreateInput = SoapNoteInput & {
+  appointmentId?: number | null;
   authorUserId: number;
   patientId: number;
   sourceRecordId?: string | null;
@@ -16,6 +17,17 @@ type SoapCreateInput = SoapNoteInput & {
 export async function createSoapNote(
   input: SoapCreateInput,
   db: SoapClient = prisma,
+) {
+  if (db === prisma) {
+    return prisma.$transaction((tx) => createSoapNoteInTransaction(input, tx));
+  }
+
+  return createSoapNoteInTransaction(input, db);
+}
+
+async function createSoapNoteInTransaction(
+  input: SoapCreateInput,
+  db: SoapClient,
 ) {
   if (input.sourceSystem && input.sourceRecordId) {
     const existing = await db.soapNote.findFirst({
@@ -30,9 +42,29 @@ export async function createSoapNote(
     }
   }
 
+  const linkedAppointment = input.appointmentId
+    ? await db.appointment.findUnique({
+        where: { id: input.appointmentId },
+        select: {
+          id: true,
+          patientId: true,
+          status: true,
+        },
+      })
+    : null;
+
+  if (input.appointmentId && !linkedAppointment) {
+    throw new Error("Appointment not found.");
+  }
+
+  if (linkedAppointment && linkedAppointment.patientId !== input.patientId) {
+    throw new Error("Appointment does not belong to this patient.");
+  }
+
   const soapNote = await db.soapNote.create({
     data: {
       assessment: input.assessment,
+      appointmentId: input.appointmentId ?? null,
       authorUserId: input.authorUserId,
       encounteredAt: input.encounteredAt,
       objective: input.objective,
@@ -48,11 +80,25 @@ export async function createSoapNote(
     },
   });
 
+  if (linkedAppointment && linkedAppointment.status !== "fulfilled") {
+    await db.appointment.update({
+      where: { id: linkedAppointment.id },
+      data: {
+        status: "fulfilled",
+      },
+    });
+  }
+
   await writeAuditLog(db, {
     action: input.sourceSystem ? "soap.import.created" : "soap.created",
     category: input.sourceSystem ? "import" : "soap",
     entityId: String(soapNote.id),
     entityType: "SoapNote",
+    metadata: input.appointmentId
+      ? ({
+          appointmentId: input.appointmentId,
+        } satisfies Prisma.JsonObject)
+      : undefined,
     userId: input.authorUserId,
   });
 
@@ -106,4 +152,3 @@ export async function ensureImportUser() {
     },
   });
 }
-

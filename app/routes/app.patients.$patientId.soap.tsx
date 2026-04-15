@@ -26,6 +26,7 @@ import { parseNarrativeForm } from "~/lib/validation/narrative";
 import { parseSoapForm } from "~/lib/validation/soap";
 import {
   formatDate,
+  formatDateTime,
   formatPatientAge,
   toDateTimeLocalValue,
 } from "~/lib/utils";
@@ -43,6 +44,23 @@ type NarrativeDraftState = {
   encounteredAt: string;
   title: string;
 };
+
+type LinkedAppointment = {
+  appointmentType: string;
+  end: Date | string;
+  id: number;
+  start: Date | string;
+  status: string;
+};
+
+function parseOptionalPositiveInt(value: FormDataEntryValue | string | null) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
 
 function loadDraft<T extends Record<string, string>>(storageKey: string) {
   if (typeof window === "undefined") {
@@ -96,10 +114,14 @@ function useBeforeUnloadWarning(when: boolean) {
 
 function SoapNoteForm(props: {
   defaultEncounteredAt: string;
+  linkedAppointment: LinkedAppointment | null;
   patientId: number;
   resetDraft: boolean;
+  timeZone: string;
 }) {
-  const storageKey = `patient:${props.patientId}:draft:soap`;
+  const storageKey = props.linkedAppointment
+    ? `patient:${props.patientId}:appointment:${props.linkedAppointment.id}:draft:soap`
+    : `patient:${props.patientId}:draft:soap`;
   const emptyState: SoapDraftState = {
     assessment: "",
     encounteredAt: props.defaultEncounteredAt,
@@ -145,9 +167,24 @@ function SoapNoteForm(props: {
         <p className="mt-2 text-sm text-[color:var(--muted)]">
           Structured clinical registration with subjective, objective, assessment, and plan.
         </p>
+        {props.linkedAppointment ? (
+          <p className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm">
+            Appointment at {formatDateTime(props.linkedAppointment.start, {
+              timeZone: props.timeZone,
+            })} linked to {props.linkedAppointment.appointmentType}. Saving this SOAP note
+            will mark the appointment as fulfilled.
+          </p>
+        ) : null}
       </div>
       <Form className="mt-8 space-y-5" method="post">
         <input name="noteType" type="hidden" value="soap" />
+        {props.linkedAppointment ? (
+          <input
+            name="appointmentId"
+            type="hidden"
+            value={props.linkedAppointment.id}
+          />
+        ) : null}
         <label className="block">
           <span className="field-label">Encounter date and time</span>
           <input
@@ -342,6 +379,8 @@ export async function loader({
   await requireUserSession(request);
 
   const patientId = Number(params.patientId);
+  const url = new URL(request.url);
+  const appointmentId = parseOptionalPositiveInt(url.searchParams.get("appointmentId"));
   const [patient, timeZone] = await Promise.all([
     prisma.patient.findUnique({
       where: { id: patientId },
@@ -364,9 +403,24 @@ export async function loader({
     throw new Response("Patient not found", { status: 404 });
   }
 
-  const [previousSoapNotes, previousNarrativeNotes] = await Promise.all([
+  const [previousSoapNotes, previousNarrativeNotes, linkedAppointment] = await Promise.all([
     getPatientSoapNotes(patient.id),
     getPatientNarrativeNotes(patient.id),
+    appointmentId
+      ? prisma.appointment.findFirst({
+          where: {
+            id: appointmentId,
+            patientId: patient.id,
+          },
+          select: {
+            appointmentType: true,
+            end: true,
+            id: true,
+            start: true,
+            status: true,
+          },
+        })
+      : null,
   ]);
 
   const previousNotes = [
@@ -394,7 +448,8 @@ export async function loader({
   ].sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
 
   return {
-    defaultEncounteredAt: toDateTimeLocalValue(new Date(), timeZone),
+    defaultEncounteredAt: toDateTimeLocalValue(linkedAppointment?.start ?? new Date(), timeZone),
+    linkedAppointment,
     patient,
     previousNotes,
     soapNoteCount: previousSoapNotes.length,
@@ -412,6 +467,7 @@ export async function action({
   const auth = await requireUserSession(request);
   const formData = await request.formData();
   const noteType = String(formData.get("noteType") ?? "soap");
+  const appointmentId = parseOptionalPositiveInt(formData.get("appointmentId"));
   const [patient, timeZone] = await Promise.all([
     prisma.patient.findUnique({
       where: { id: Number(params.patientId) },
@@ -457,12 +513,17 @@ export async function action({
       const input = parseSoapForm(formData, timeZone);
       await createSoapNote({
         ...input,
+        appointmentId,
         authorUserId: auth.user.id,
         patientId: Number(params.patientId),
       });
     }
 
-    throw redirect(`/patients/${params.patientId}/soap?saved=${noteType}`);
+    throw redirect(
+      `/patients/${params.patientId}/soap?saved=${noteType}${
+        noteType === "soap" && appointmentId ? `&appointmentId=${appointmentId}` : ""
+      }`,
+    );
   } catch (error) {
     if (error instanceof Response) {
       throw error;
@@ -477,13 +538,13 @@ export async function action({
     }
 
     return {
-      error: "Could not save the note.",
+      error: error instanceof Error ? error.message : "Could not save the note.",
     };
   }
 }
 
 export default function SoapRoute() {
-  const { defaultEncounteredAt, patient, previousNotes, soapNoteCount, timeZone } =
+  const { defaultEncounteredAt, linkedAppointment, patient, previousNotes, soapNoteCount, timeZone } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const summaryFetcher = useFetcher<{ summary: import("~/lib/clinical-summary.server").ClinicalSummary | null }>();
@@ -498,8 +559,13 @@ export default function SoapRoute() {
       return;
     }
 
+    const savedAppointmentId = parseOptionalPositiveInt(searchParams.get("appointmentId"));
+
     if (savedType === "soap") {
       clearDraft(`patient:${patient.id}:draft:soap`);
+      if (savedAppointmentId) {
+        clearDraft(`patient:${patient.id}:appointment:${savedAppointmentId}:draft:soap`);
+      }
     }
 
     if (savedType === "narrative") {
@@ -601,8 +667,10 @@ export default function SoapRoute() {
         <div className="grid gap-6 xl:grid-cols-2">
           <SoapNoteForm
             defaultEncounteredAt={defaultEncounteredAt}
+            linkedAppointment={linkedAppointment}
             patientId={patient.id}
             resetDraft={savedType === "soap"}
+            timeZone={timeZone}
           />
           <NarrativeNoteForm
             defaultEncounteredAt={defaultEncounteredAt}

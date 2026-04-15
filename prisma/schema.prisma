@@ -75,7 +75,8 @@ model Appointment {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
-  patient Patient @relation(fields: [patientId], references: [id])
+  patient   Patient    @relation(fields: [patientId], references: [id])
+  soapNotes SoapNote[]
 }
 
 model GeneralSetting {
@@ -122,6 +123,7 @@ model SoapNote {
   id             Int      @id @default(autoincrement())
   patientId      Int      @map("patient_id")
   authorUserId   Int      @map("author_user_id")
+  appointmentId  Int?     @map("appointment_id")
   encounteredAt  DateTime @map("encountered_at")
   subjective     String   @db.Text
   objective      String   @db.Text
@@ -132,9 +134,11 @@ model SoapNote {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
-  patient Patient  @relation(fields: [patientId], references: [id])
-  author  AuthUser @relation(fields: [authorUserId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  patient     Patient      @relation(fields: [patientId], references: [id])
+  author      AuthUser     @relation(fields: [authorUserId], references: [id])
 
+  @@index([appointmentId])
   @@unique([sourceSystem, sourceRecordId])
 }
 

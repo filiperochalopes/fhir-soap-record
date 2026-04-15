@@ -1,6 +1,8 @@
-import { Form, useLoaderData } from "react-router";
+import { Form, Link, redirect, useLoaderData, useSubmit } from "react-router";
+import { Prisma } from "@prisma/client";
 
 import { requireUserSession } from "~/lib/auth.server";
+import { writeAuditLog } from "~/lib/audit.server";
 import { prisma } from "~/lib/prisma.server";
 import { getUiTimeZone } from "~/lib/settings.server";
 import {
@@ -8,6 +10,30 @@ import {
   getDayRangeForTimeZone,
   getTodayDateInputValue,
 } from "~/lib/utils";
+
+const appointmentStatuses = [
+  "proposed",
+  "pending",
+  "booked",
+  "arrived",
+  "fulfilled",
+  "cancelled",
+  "noshow",
+  "entered-in-error",
+  "checked-in",
+  "waitlist",
+] as const;
+
+const appointmentStatusSet = new Set<string>(appointmentStatuses);
+
+function parseAppointmentId(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
 
 export async function loader({ request }: { request: Request }) {
   await requireUserSession(request);
@@ -40,8 +66,72 @@ export async function loader({ request }: { request: Request }) {
   };
 }
 
+export async function action({ request }: { request: Request }) {
+  const auth = await requireUserSession(request);
+  const formData = await request.formData();
+  const appointmentId = parseAppointmentId(formData.get("appointmentId"));
+  const status = String(formData.get("status") ?? "");
+  const date = String(formData.get("date") ?? "");
+
+  if (!appointmentId) {
+    throw new Response("Appointment id is required.", { status: 400 });
+  }
+
+  if (!appointmentStatusSet.has(status)) {
+    throw new Response("Appointment status is invalid.", { status: 400 });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const appointment = await tx.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        appointmentType: true,
+        end: true,
+        id: true,
+        patientId: true,
+        start: true,
+        status: true,
+      },
+    });
+
+    if (!appointment) {
+      throw new Response("Appointment not found.", { status: 404 });
+    }
+
+    if (appointment.status === status) {
+      return;
+    }
+
+    await tx.appointment.update({
+      where: { id: appointment.id },
+      data: {
+        status,
+      },
+    });
+
+    await writeAuditLog(tx, {
+      action: "appointment.status.updated",
+      category: "appointment",
+      entityId: String(appointment.id),
+      entityType: "Appointment",
+      metadata: {
+        appointmentType: appointment.appointmentType,
+        end: appointment.end.toISOString(),
+        fromStatus: appointment.status,
+        patientId: appointment.patientId,
+        start: appointment.start.toISOString(),
+        status,
+      } satisfies Prisma.JsonObject,
+      userId: auth.user.id,
+    });
+  });
+
+  throw redirect(date ? `/agenda?date=${encodeURIComponent(date)}` : "/agenda");
+}
+
 export default function AgendaRoute() {
   const { appointments, date, timeZone } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
 
   return (
     <div className="space-y-6">
@@ -49,14 +139,23 @@ export default function AgendaRoute() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
-              Read-only agenda
+              Daily agenda
             </p>
             <h2 className="mt-2 text-3xl font-semibold">Appointments</h2>
           </div>
           <Form className="flex flex-wrap items-end gap-3" method="get">
             <label className="block">
               <span className="field-label">Date</span>
-              <input defaultValue={date} name="date" type="date" />
+              <input
+                defaultValue={date}
+                name="date"
+                type="date"
+                onChange={(event) => {
+                  if (event.currentTarget.form) {
+                    submit(event.currentTarget.form);
+                  }
+                }}
+              />
             </label>
             <button className="button-secondary" type="submit">
               Load day
@@ -75,6 +174,7 @@ export default function AgendaRoute() {
                 <th className="px-5 py-4">End</th>
                 <th className="px-5 py-4">Status</th>
                 <th className="px-5 py-4">Type</th>
+                <th aria-label="Actions" className="px-5 py-4" />
               </tr>
             </thead>
             <tbody>
@@ -84,15 +184,43 @@ export default function AgendaRoute() {
                     <td className="px-5 py-4 font-medium">{appointment.patient.name}</td>
                     <td className="px-5 py-4">{formatDateTime(appointment.start, { timeZone })}</td>
                     <td className="px-5 py-4">{formatDateTime(appointment.end, { timeZone })}</td>
-                    <td className="px-5 py-4 uppercase text-[color:var(--muted)]">
-                      {appointment.status}
+                    <td className="px-5 py-4">
+                      <Form method="post">
+                        <input name="appointmentId" type="hidden" value={appointment.id} />
+                        <input name="date" type="hidden" value={date} />
+                        <select
+                          aria-label={`Status for ${appointment.patient.name}`}
+                          className="min-w-36 uppercase"
+                          name="status"
+                          defaultValue={appointment.status}
+                          onChange={(event) => {
+                            if (event.currentTarget.form) {
+                              submit(event.currentTarget.form);
+                            }
+                          }}
+                        >
+                          {appointmentStatuses.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </Form>
                     </td>
                     <td className="px-5 py-4">{appointment.appointmentType}</td>
+                    <td className="px-5 py-4 text-right">
+                      <Link
+                        className="button-primary whitespace-nowrap"
+                        to={`/patients/${appointment.patientId}/soap?appointmentId=${appointment.id}`}
+                      >
+                        Attend
+                      </Link>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="px-5 py-6 text-[color:var(--muted)]" colSpan={5}>
+                  <td className="px-5 py-6 text-[color:var(--muted)]" colSpan={6}>
                     No appointments registered for this date.
                   </td>
                 </tr>

@@ -55,6 +55,15 @@ export function toFhirEncounter(note: SoapNoteWithRelations) {
       start: note.encounteredAt.toISOString(),
       end: note.encounteredAt.toISOString(),
     },
+    ...(note.appointmentId
+      ? {
+          appointment: [
+            {
+              reference: `Appointment/${note.appointmentId}`,
+            },
+          ],
+        }
+      : {}),
   };
 }
 

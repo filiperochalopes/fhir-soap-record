@@ -6,7 +6,7 @@ The application is intentionally narrow:
 
 - token-based authentication
 - patient registry and editing
-- read-only agenda
+- agenda with appointment-based attendance entry
 - SOAP and narrative note registration
 - FHIR-oriented API
 - FHIR Bundle import
@@ -216,7 +216,7 @@ Implemented MVP screens:
 - token login
 - patient list with search
 - patient create/edit
-- read-only agenda based on `Appointment`
+- agenda based on `Appointment`, with attendance entry into SOAP registration
 - clinical registration page with SOAP and narrative note forms plus collapsed previous-records section
 
 Implemented API surface:

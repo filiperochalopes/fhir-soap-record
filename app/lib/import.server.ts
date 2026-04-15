@@ -147,6 +147,35 @@ function resourceByReference(
   return resources.get(reference);
 }
 
+function referenceFromObject(value: unknown) {
+  const record = asRecord(value);
+  return typeof record?.reference === "string" ? record.reference : undefined;
+}
+
+function firstEncounterAppointmentReference(encounterResource: Record<string, unknown> | undefined) {
+  const appointmentValue = encounterResource?.appointment;
+  const appointments = Array.isArray(appointmentValue) ? appointmentValue : [];
+  const firstAppointment = appointments[0];
+  return firstAppointment ? referenceFromObject(firstAppointment) : undefined;
+}
+
+function compositionEncounterReference(resource: Record<string, unknown>) {
+  return referenceFromObject(resource.encounter);
+}
+
+function linkedAppointmentIdForComposition(
+  resource: Record<string, unknown>,
+  resourceMap: Map<string, Record<string, unknown>>,
+  appointmentMap: Map<string, number>,
+) {
+  const encounterResource = resourceByReference(
+    resourceMap,
+    compositionEncounterReference(resource),
+  );
+  const appointmentReference = firstEncounterAppointmentReference(encounterResource);
+  return appointmentReference ? appointmentMap.get(appointmentReference) ?? null : null;
+}
+
 function sectionText(
   resourceMap: Map<string, Record<string, unknown>>,
   sections: unknown[],
@@ -376,7 +405,7 @@ async function importAppointment(
   });
 
   if (!existing) {
-    await prisma.appointment.create({
+    const appointment = await prisma.appointment.create({
       data: {
         appointmentType,
         end,
@@ -386,11 +415,11 @@ async function importAppointment(
       },
     });
 
-    return "created" as const;
+    return { appointmentId: appointment.id, status: "created" as const };
   }
 
   if (existing.status === status && existing.appointmentType === appointmentType) {
-    return "skipped" as const;
+    return { appointmentId: existing.id, status: "skipped" as const };
   }
 
   await prisma.appointment.update({
@@ -401,12 +430,13 @@ async function importAppointment(
     },
   });
 
-  return "updated" as const;
+  return { appointmentId: existing.id, status: "updated" as const };
 }
 
 export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) {
   const summary = emptySummary();
   const importUser = await ensureImportUser();
+  const appointmentMap = new Map<string, number>();
   const resourceMap = new Map<string, Record<string, unknown>>();
   const patientMap = new Map<string, number>();
 
@@ -492,7 +522,13 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
 
       summary.processed += 1;
       const appointmentResult = await importAppointment(resource, patientId);
-      summary[appointmentResult] += 1;
+      summary[appointmentResult.status] += 1;
+      if (entry.fullUrl) {
+        appointmentMap.set(entry.fullUrl, appointmentResult.appointmentId);
+      }
+      if (typeof resource.id === "string") {
+        appointmentMap.set(`Appointment/${resource.id}`, appointmentResult.appointmentId);
+      }
     } catch (error) {
       summary.errors.push({
         item: "Appointment",
@@ -525,11 +561,7 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
         typeof resource.date === "string"
           ? new Date(resource.date)
           : (() => {
-              const encounterRef =
-                asRecord(resource.encounter) &&
-                typeof asRecord(resource.encounter)?.reference === "string"
-                  ? (asRecord(resource.encounter)?.reference as string)
-                  : undefined;
+              const encounterRef = compositionEncounterReference(resource);
               const encounterResource = resourceByReference(resourceMap, encounterRef);
               const periodRecord = asRecord(encounterResource?.period);
 
@@ -550,6 +582,11 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       const plan = sectionText(resourceMap, sections, "plan");
       const narrativeSections = sectionNarratives(resourceMap, sections);
       const { sourceRecordId, sourceSystem } = compositionSource(resource, entry.fullUrl);
+      const appointmentId = linkedAppointmentIdForComposition(
+        resource,
+        resourceMap,
+        appointmentMap,
+      );
 
       summary.processed += 1;
       const isSoapComposition =
@@ -569,6 +606,7 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
             authorUserId: importUser.id,
             encounteredAt: encounterDate,
             objective,
+            appointmentId,
             patientId,
             plan,
             sourceRecordId,
