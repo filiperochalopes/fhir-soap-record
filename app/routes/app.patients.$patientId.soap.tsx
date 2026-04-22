@@ -192,12 +192,13 @@ function SoapNoteForm(props: {
             required
             type="datetime-local"
             value={formState.encounteredAt}
-            onChange={(event) =>
+            onChange={(event) => {
+              const encounteredAt = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                encounteredAt: event.currentTarget.value,
-              }))
-            }
+                encounteredAt,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -206,12 +207,13 @@ function SoapNoteForm(props: {
             name="subjective"
             required
             value={formState.subjective}
-            onChange={(event) =>
+            onChange={(event) => {
+              const subjective = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                subjective: event.currentTarget.value,
-              }))
-            }
+                subjective,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -220,12 +222,13 @@ function SoapNoteForm(props: {
             name="objective"
             required
             value={formState.objective}
-            onChange={(event) =>
+            onChange={(event) => {
+              const objective = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                objective: event.currentTarget.value,
-              }))
-            }
+                objective,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -234,12 +237,13 @@ function SoapNoteForm(props: {
             name="assessment"
             required
             value={formState.assessment}
-            onChange={(event) =>
+            onChange={(event) => {
+              const assessment = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                assessment: event.currentTarget.value,
-              }))
-            }
+                assessment,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -248,12 +252,13 @@ function SoapNoteForm(props: {
             name="plan"
             required
             value={formState.plan}
-            onChange={(event) =>
+            onChange={(event) => {
+              const plan = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                plan: event.currentTarget.value,
-              }))
-            }
+                plan,
+              }));
+            }}
           />
         </label>
         <div className="flex justify-end">
@@ -323,12 +328,13 @@ function NarrativeNoteForm(props: {
             required
             type="datetime-local"
             value={formState.encounteredAt}
-            onChange={(event) =>
+            onChange={(event) => {
+              const encounteredAt = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                encounteredAt: event.currentTarget.value,
-              }))
-            }
+                encounteredAt,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -337,12 +343,13 @@ function NarrativeNoteForm(props: {
             name="title"
             placeholder="Optional note title"
             value={formState.title}
-            onChange={(event) =>
+            onChange={(event) => {
+              const title = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                title: event.currentTarget.value,
-              }))
-            }
+                title,
+              }));
+            }}
           />
         </label>
         <label className="block">
@@ -351,12 +358,13 @@ function NarrativeNoteForm(props: {
             name="body"
             required
             value={formState.body}
-            onChange={(event) =>
+            onChange={(event) => {
+              const body = event.currentTarget.value;
               setFormState((current) => ({
                 ...current,
-                body: event.currentTarget.value,
-              }))
-            }
+                body,
+              }));
+            }}
           />
         </label>
         <div className="flex justify-end">
