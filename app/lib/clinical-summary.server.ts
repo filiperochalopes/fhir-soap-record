@@ -1,6 +1,7 @@
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { SoapNote } from "@prisma/client";
 
-import { getDefaultTextProvider } from "~/lib/ai/provider.server";
+import { getDefaultChatModel } from "~/lib/ai/provider.server";
 
 export type ClinicalSummaryCondition = {
   context: string;
@@ -108,8 +109,8 @@ export async function generateClinicalSummary(input: {
     return null;
   }
 
-  const provider = getDefaultTextProvider();
-  if (!provider) {
+  const model = getDefaultChatModel({ maxTokens: 1600 });
+  if (!model) {
     return null;
   }
 
@@ -129,38 +130,47 @@ export async function generateClinicalSummary(input: {
     noteNumber: index + 1,
   }));
 
+  const systemPrompt = [
+    "Você gera um resumo clínico IPS-like em português para tela de prontuário.",
+    "A seção principal é Problemas e condições.",
+    "Problemas e condições deve ser derivada principalmente dos campos assessment (A) de todos os SOAPs.",
+    "Ordene os problemas por prioridade clínica aparente, recorrência e contexto longitudinal.",
+    "Consolide duplicatas, preserve incertezas diagnósticas e não invente fatos.",
+    "Resumo clínico breve deve sintetizar o quadro longitudinal usando todos os campos SOAP.",
+    "Alergias e medicações só devem ser mencionadas se estiverem explicitamente descritas nos registros.",
+    "História recente deve resumir os encontros mais recentes de forma breve.",
+    "Responda apenas JSON válido.",
+    'Use exatamente este formato: {"conditions":[{"name":"","context":""}],"briefSummary":"","allergiesAndMedications":"","recentHistory":""}.',
+    "Use strings vazias quando uma seção textual não tiver conteúdo.",
+    "Cada item de conditions deve ser curto e clínico.",
+  ].join(" ");
+
+  const userPayload = JSON.stringify(
+    {
+      assessments,
+      patient: {
+        birthDate: input.patient.birthDate?.toISOString() ?? null,
+        gender: input.patient.gender,
+        name: input.patient.name,
+      },
+      soapNotes,
+    },
+    null,
+    2,
+  );
+
   try {
-    const responseText = await provider.generateText({
-      maxTokens: 1600,
-      system: [
-        "Você gera um resumo clínico IPS-like em português para tela de prontuário.",
-        "A seção principal é Problemas e condições.",
-        "Problemas e condições deve ser derivada principalmente dos campos assessment (A) de todos os SOAPs.",
-        "Ordene os problemas por prioridade clínica aparente, recorrência e contexto longitudinal.",
-        "Consolide duplicatas, preserve incertezas diagnósticas e não invente fatos.",
-        "Resumo clínico breve deve sintetizar o quadro longitudinal usando todos os campos SOAP.",
-        "Alergias e medicações só devem ser mencionadas se estiverem explicitamente descritas nos registros.",
-        "História recente deve resumir os encontros mais recentes de forma breve.",
-        "Responda apenas JSON válido.",
-        'Use exatamente este formato: {"conditions":[{"name":"","context":""}],"briefSummary":"","allergiesAndMedications":"","recentHistory":""}.',
-        "Use strings vazias quando uma seção textual não tiver conteúdo.",
-        "Cada item de conditions deve ser curto e clínico.",
-      ].join(" "),
-      temperature: 0,
-      user: JSON.stringify(
-        {
-          assessments,
-          patient: {
-            birthDate: input.patient.birthDate?.toISOString() ?? null,
-            gender: input.patient.gender,
-            name: input.patient.name,
-          },
-          soapNotes,
-        },
-        null,
-        2,
-      ),
-    });
+    const response = await model.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage(userPayload),
+    ]);
+
+    const responseText =
+      typeof response.content === "string"
+        ? response.content
+        : response.content
+            .map((part) => (typeof part === "string" ? part : "text" in part ? part.text : ""))
+            .join("\n");
 
     const parsed = JSON.parse(extractJsonFromModelOutput(responseText)) as unknown;
     return normalizeSummary(parsed);

@@ -21,6 +21,10 @@
     "create:user": "tsx scripts/create-auth-user.ts"
   },
   "dependencies": {
+    "@langchain/anthropic": "^0.3.15",
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.50",
+    "@langchain/mcp-adapters": "^0.4.5",
     "@prisma/client": "^6.6.0",
     "@react-router/node": "^7.4.0",
     "@react-router/serve": "^7.4.0",
@@ -30,7 +34,9 @@
     "prisma": "^6.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^9.0.1",
     "react-router": "^7.4.0",
+    "remark-gfm": "^4.0.0",
     "swagger-ui-react": "^5.24.2",
     "zod": "^3.24.2"
   },

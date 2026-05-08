@@ -29,5 +29,9 @@ services:
       API_DRY_RUN: ${API_DRY_RUN:-false}
       COOKIE_NAME: clinic_token
       PORT: 3000
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-20250514}
+      LLM_TOKEN: ${LLM_TOKEN:-}
+      MCP_CALC_URL: ${MCP_CALC_URL:-http://beta.calc.filipelopes.med.br/mcp}
     ports:
       - "${APP_PORT:-3000}:3000"

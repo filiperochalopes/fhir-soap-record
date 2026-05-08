@@ -1,6 +1,7 @@
 node_modules
 .react-router
 build
+.pnpm-store/
 .vite
 .DS_Store
 .env

@@ -1,29 +1,27 @@
-import { createAnthropicTextProvider } from "~/lib/ai/anthropic.server";
+import { ChatAnthropic } from "@langchain/anthropic";
 
-export type TextGenerationRequest = {
-  maxTokens?: number;
-  system: string;
-  temperature?: number;
-  user: string;
-};
+const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 
-export type TextProvider = {
-  generateText: (request: TextGenerationRequest) => Promise<string>;
-  model: string;
-  provider: string;
-};
+export type ChatModel = ChatAnthropic;
 
-export function getDefaultTextProvider() {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) {
+export function getDefaultChatModel(options?: { maxTokens?: number }): ChatModel | null {
+  const provider = process.env.LLM_PROVIDER?.trim().toLowerCase() || "anthropic";
+  const token = process.env.LLM_TOKEN?.trim();
+  const model = process.env.LLM_MODEL?.trim() || DEFAULT_MODEL;
+
+  if (!token) {
     return null;
   }
 
-  return createAnthropicTextProvider({
-    apiBaseUrl:
-      process.env.ANTHROPIC_API_BASE_URL?.replace(/\/+$/, "") || "https://api.anthropic.com",
-    apiKey,
-    apiVersion: process.env.ANTHROPIC_API_VERSION || "2023-06-01",
-    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+  if (provider !== "anthropic") {
+    throw new Error(`Unsupported LLM_PROVIDER: ${provider}`);
+  }
+
+  return new ChatAnthropic({
+    apiKey: token,
+    model,
+    temperature: 0,
+    ...(options?.maxTokens ? { maxTokens: options.maxTokens } : {}),
   });
 }
+
