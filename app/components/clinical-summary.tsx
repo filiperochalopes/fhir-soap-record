@@ -1,11 +1,9 @@
 import type { ReactNode } from "react";
 
+import { PluginCard } from "~/components/soap-plugins/PluginCard";
 import type { ClinicalSummary } from "~/lib/clinical-summary.server";
 
-function SummarySection(props: {
-  children: ReactNode;
-  title: string;
-}) {
+function SummarySection(props: { children: ReactNode; title: string }) {
   return (
     <section className="rounded-2xl border border-violet-500/15 bg-white/45 p-4 dark:bg-slate-950/30">
       <h4 className="field-label text-violet-700 dark:text-violet-200">{props.title}</h4>
@@ -15,77 +13,45 @@ function SummarySection(props: {
 }
 
 export function ClinicalSummaryCard(props: {
+  canGenerate?: boolean;
   error?: boolean;
   isLoading?: boolean;
+  onGenerate?: () => void;
   soapNoteCount: number;
   summary: ClinicalSummary | null;
 }) {
-  return (
-    <details className="panel panel-spotlight summary-details p-6" open>
-      <summary className="summary-toggle flex cursor-pointer list-none items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-violet-700 dark:text-violet-200">
-            AI Summary
-          </p>
-          <h3 className="mt-2 text-2xl font-semibold">IPS-like clinical overview</h3>
-          <p className="mt-2 max-w-3xl text-sm text-[color:var(--muted)]">
-            Built from all prior SOAP records, with priority on problems and conditions derived
-            from the assessment section.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700 dark:text-violet-200">
-            {props.soapNoteCount} SOAP {props.soapNoteCount === 1 ? "record" : "records"}
-          </div>
-          <span
-            aria-hidden="true"
-            className="summary-toggle-icon mt-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-200"
-          >
-            <svg
-              fill="none"
-              height="8"
-              viewBox="0 0 12 8"
-              width="12"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M1.41 7.41L6 2.83L10.59 7.41L12 6L6 0L0 6L1.41 7.41Z"
-                fill="currentColor"
-                fillOpacity="0.54"
-              />
-            </svg>
-          </span>
-        </div>
-      </summary>
+  const showGenerateButton = Boolean(props.canGenerate && props.onGenerate);
 
+  return (
+    <PluginCard
+      badge={`${props.soapNoteCount} SOAP ${props.soapNoteCount === 1 ? "record" : "records"}`}
+      description="Built from all prior SOAP records, with priority on problems and conditions derived from the assessment section."
+      label="AI Summary"
+      title="IPS-like clinical overview"
+      tone="violet"
+    >
       {!props.soapNoteCount ? (
-        <p className="mt-6 text-sm text-[color:var(--muted)]">
+        <p className="text-sm text-[color:var(--muted)]">
           No previous SOAP records are available to generate the summary yet.
         </p>
       ) : props.isLoading ? (
-        <div className="mt-6 space-y-4">
-          <div className="rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
-            <div className="summary-shimmer h-5 w-56 rounded-full" />
-            <p className="mt-4 text-sm font-medium text-violet-800 dark:text-violet-100">
-              Loading IPS AI Summary...
-            </p>
-            <div className="mt-4 space-y-3">
-              <div className="summary-shimmer h-20 rounded-2xl" />
-              <div className="summary-shimmer h-16 rounded-2xl" />
-              <div className="summary-shimmer h-16 rounded-2xl" />
-            </div>
+        <div className="rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
+          <div className="summary-shimmer h-5 w-56 rounded-full" />
+          <p className="mt-4 text-sm font-medium text-violet-800 dark:text-violet-100">
+            Loading IPS AI Summary...
+          </p>
+          <div className="mt-4 space-y-3">
+            <div className="summary-shimmer h-20 rounded-2xl" />
+            <div className="summary-shimmer h-16 rounded-2xl" />
+            <div className="summary-shimmer h-16 rounded-2xl" />
           </div>
         </div>
       ) : props.error ? (
-        <p className="mt-6 text-sm text-[color:var(--muted)]">
-          AI summary is unavailable right now. Previous SOAP records remain available below.
+        <p className="text-sm text-[color:var(--muted)]">
+          Falha ao gerar o resumo. Tente novamente.
         </p>
-      ) : !props.summary ? (
-        <p className="mt-6 text-sm text-[color:var(--muted)]">
-          AI summary is unavailable right now. Previous SOAP records remain available below.
-        </p>
-      ) : (
-        <div className="mt-6 grid gap-4 xl:grid-cols-[1.25fr_1fr]">
+      ) : props.summary ? (
+        <div className="grid gap-4 xl:grid-cols-[1.25fr_1fr]">
           <SummarySection title="Problemas e condições">
             <div className="space-y-3">
               {props.summary.conditions.length ? (
@@ -129,7 +95,20 @@ export function ClinicalSummaryCard(props: {
             </SummarySection>
           </div>
         </div>
-      )}
-    </details>
+      ) : null}
+
+      {showGenerateButton ? (
+        <div className="mt-6 flex justify-end">
+          <button
+            className="button-tonal-violet"
+            disabled={props.isLoading}
+            onClick={props.onGenerate}
+            type="button"
+          >
+            {props.isLoading ? "Gerando..." : "Gerar resumo"}
+          </button>
+        </div>
+      ) : null}
+    </PluginCard>
   );
 }

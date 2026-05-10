@@ -14,24 +14,13 @@ export function AiSummaryCard(props: SoapPluginCardProps) {
   const error = requested && fetcher.state === "idle" && fetcher.data === undefined;
 
   return (
-    <div className="space-y-3">
-      <ClinicalSummaryCard
-        error={error}
-        isLoading={isLoading}
-        soapNoteCount={props.soapNoteCount}
-        summary={fetcher.data?.summary ?? null}
-      />
-      {props.soapNoteCount > 0 && !requested ? (
-        <div className="flex justify-end">
-          <button
-            className="button-secondary"
-            onClick={() => fetcher.load(`/patients/${props.patientId}/summary`)}
-            type="button"
-          >
-            Gerar resumo
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <ClinicalSummaryCard
+      canGenerate={props.soapNoteCount > 0 && !requested}
+      error={error}
+      isLoading={isLoading}
+      onGenerate={() => fetcher.load(`/patients/${props.patientId}/summary`)}
+      soapNoteCount={props.soapNoteCount}
+      summary={fetcher.data?.summary ?? null}
+    />
   );
 }

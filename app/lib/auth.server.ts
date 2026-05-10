@@ -160,6 +160,44 @@ export async function createUserToken(input: {
   return { rawToken, user };
 }
 
+export async function addTokenToUser(userId: number) {
+  const rawToken = createRawToken();
+  const tokenHash = hashToken(rawToken);
+
+  const token = await prisma.authToken.create({
+    data: { tokenHash, userId },
+    include: { user: true },
+  });
+
+  await writeAuditLog(prisma, {
+    action: "auth.token.created",
+    category: "auth",
+    entityId: String(token.id),
+    entityType: "AuthToken",
+    userId,
+  });
+
+  return { rawToken, user: token.user };
+}
+
+export async function revokeToken(tokenId: number) {
+  const token = await prisma.authToken.update({
+    where: { id: tokenId },
+    data: { isActive: false, revokedAt: new Date() },
+    include: { user: true },
+  });
+
+  await writeAuditLog(prisma, {
+    action: "auth.token.revoked",
+    category: "auth",
+    entityId: String(token.id),
+    entityType: "AuthToken",
+    userId: token.userId,
+  });
+
+  return token;
+}
+
 export async function recordLoginAudit(auth: AuthContext) {
   await writeAuditLog(prisma, {
     action: "auth.token.used",

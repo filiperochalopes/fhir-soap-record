@@ -78,8 +78,8 @@ export async function action({
   }
 
   try {
-    const narrative = await runCalcMcpAgent(payload);
-    return Response.json({ narrative });
+    const { narrative, toolResults } = await runCalcMcpAgent(payload);
+    return Response.json({ narrative, toolResults, request: payload });
   } catch (error) {
     console.error("Calc MCP agent failed", error);
     return Response.json(

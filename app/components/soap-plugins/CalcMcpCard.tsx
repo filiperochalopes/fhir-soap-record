@@ -3,13 +3,19 @@ import ReactMarkdown from "react-markdown";
 import { useFetcher } from "react-router";
 import remarkGfm from "remark-gfm";
 
-import { formatPatientAge } from "~/lib/utils";
+import { DebugJsonModal } from "~/components/soap-plugins/DebugJsonModal";
+import { PluginCard } from "~/components/soap-plugins/PluginCard";
+import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
+import type { ToolCallResult } from "~/lib/ai/mcp.server";
 import type { SoapPluginCardProps } from "~/lib/soap-plugins/types";
+import { formatPatientAge } from "~/lib/utils";
 
 type Scope = "current" | "current_history";
 
 type CalcMcpResponse = {
   narrative?: string;
+  toolResults?: ToolCallResult[];
+  request?: unknown;
   error?: string;
 };
 
@@ -36,11 +42,14 @@ function readDraft(storageKey: string) {
 export function CalcMcpCard(props: SoapPluginCardProps) {
   const fetcher = useFetcher<CalcMcpResponse>();
   const [scope, setScope] = useState<Scope>("current");
+  const [debugOpen, setDebugOpen] = useState(false);
   const ageLabel = formatPatientAge(props.patient.birthDate, { timeZone: props.timeZone });
   const ageReady = Boolean(ageLabel);
 
   const isLoading = fetcher.state !== "idle";
   const narrative = fetcher.data?.narrative ?? null;
+  const toolResults = fetcher.data?.toolResults ?? null;
+  const requestPayload = fetcher.data?.request ?? null;
   const error = fetcher.data?.error ?? null;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -59,74 +68,84 @@ export function CalcMcpCard(props: SoapPluginCardProps) {
   }
 
   return (
-    <section className="panel p-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
-            SOAP Plugin
+    <>
+      <PluginCard
+        description="Envia dados anonimizados (idade e sexo, sem nome ou identificadores) ao servidor MCP de calculadoras médicas e retorna scores aplicáveis em narrativa curta."
+        label="SOAP Plugin"
+        title="Calculadoras (MCP)"
+        tone="emerald"
+      >
+        {!ageReady ? (
+          <p className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
+            Idade indisponível, não é possível calcular scores. Cadastre a data de nascimento do
+            paciente.
           </p>
-          <h3 className="mt-2 text-2xl font-semibold">Calculadoras (MCP)</h3>
-          <p className="mt-2 max-w-3xl text-sm text-[color:var(--muted)]">
-            Envia dados anonimizados (idade e sexo, sem nome ou identificadores) ao servidor MCP de
-            calculadoras médicas e retorna scores aplicáveis em narrativa curta.
+        ) : (
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div>
+              <p className="field-label">Escopo dos dados</p>
+              <SegmentedControl
+                onChange={setScope}
+                options={[
+                  { label: "SOAP atual", value: "current" },
+                  {
+                    disabled: !props.soapNoteCount,
+                    label: props.soapNoteCount
+                      ? "Atual + histórico"
+                      : "Atual + histórico (vazio)",
+                    value: "current_history",
+                  },
+                ]}
+                tone="emerald"
+                value={scope}
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button className="button-tonal-emerald" disabled={isLoading} type="submit">
+                {isLoading ? "Executando..." : "Executar"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {error ? (
+          <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+            {error}
           </p>
-        </div>
-      </div>
+        ) : null}
 
-      {!ageReady ? (
-        <p className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
-          Idade indisponível, não é possível calcular scores. Cadastre a data de nascimento do
-          paciente.
-        </p>
-      ) : (
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          <fieldset className="space-y-2">
-            <legend className="field-label">Escopo dos dados</legend>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                checked={scope === "current"}
-                name="scope"
-                onChange={() => setScope("current")}
-                type="radio"
-                value="current"
-              />
-              <span>SOAP atual em edição</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                checked={scope === "current_history"}
-                disabled={!props.soapNoteCount}
-                name="scope"
-                onChange={() => setScope("current_history")}
-                type="radio"
-                value="current_history"
-              />
-              <span>
-                Atual + histórico
-                {!props.soapNoteCount ? " (nenhum SOAP anterior)" : null}
-              </span>
-            </label>
-          </fieldset>
+        {narrative ? (
+          <div className="relative mt-6">
+            {/* Debug button */}
+            {toolResults ? (
+              <button
+                aria-label="Ver JSON de debug"
+                className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 transition hover:bg-emerald-500/20 dark:text-emerald-300"
+                onClick={() => setDebugOpen(true)}
+                title="Ver JSON de debug"
+                type="button"
+              >
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9.5 5H9a2 2 0 0 0-2 2v2c0 1-.6 3-3 3 1 0 3 .6 3 3v2a2 2 0 0 0 2 2h.5m5-14h.5a2 2 0 0 1 2 2v2c0 1 .6 3 3 3-1 0-3 .6-3 3v2a2 2 0 0 1-2 2h-.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"/>
+                </svg>
+              </button>
+            ) : null}
 
-          <div className="flex justify-end">
-            <button className="button-primary" disabled={isLoading} type="submit">
-              {isLoading ? "Executando..." : "Executar"}
-            </button>
+            <div className="mcp-result rounded-2xl border border-emerald-500/15 bg-white/45 p-5 dark:bg-slate-950/30">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown>
+            </div>
           </div>
-        </form>
-      )}
+        ) : null}
+      </PluginCard>
 
-      {error ? (
-        <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
-          {error}
-        </p>
+      {debugOpen && toolResults ? (
+        <DebugJsonModal
+          request={requestPayload}
+          response={toolResults}
+          onClose={() => setDebugOpen(false)}
+        />
       ) : null}
-
-      {narrative ? (
-        <div className="prose prose-sm dark:prose-invert mt-6 max-w-none rounded-2xl border border-violet-500/15 bg-white/45 p-4 dark:bg-slate-950/30">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown>
-        </div>
-      ) : null}
-    </section>
+    </>
   );
 }

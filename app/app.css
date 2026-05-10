@@ -96,6 +96,22 @@
     border-color: rgba(196, 181, 253, 0.2);
   }
 
+  .panel-spotlight-emerald {
+    background:
+      radial-gradient(circle at top right, rgba(16, 185, 129, 0.18), transparent 34%),
+      linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(20, 184, 166, 0.04)),
+      var(--panel);
+    border-color: rgba(16, 185, 129, 0.22);
+  }
+
+  .dark .panel-spotlight-emerald {
+    background:
+      radial-gradient(circle at top right, rgba(74, 222, 128, 0.22), transparent 38%),
+      linear-gradient(135deg, rgba(6, 95, 70, 0.28), rgba(4, 120, 87, 0.14)),
+      var(--panel);
+    border-color: rgba(167, 243, 208, 0.2);
+  }
+
   .summary-shimmer {
     background:
       linear-gradient(
@@ -136,6 +152,30 @@
     @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition hover:opacity-90;
   }
 
+  .button-tonal-violet {
+    background: rgba(139, 92, 246, 0.18);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: rgb(91, 33, 182);
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .dark .button-tonal-violet {
+    background: rgba(139, 92, 246, 0.3);
+    color: rgb(221, 214, 254);
+  }
+
+  .button-tonal-emerald {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.32);
+    color: rgb(6, 95, 70);
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .dark .button-tonal-emerald {
+    background: rgba(16, 185, 129, 0.3);
+    color: rgb(167, 243, 208);
+  }
+
   .field-label {
     color: var(--muted);
     @apply mb-1 block text-xs font-semibold uppercase tracking-[0.18em];
@@ -143,6 +183,96 @@
 
   .form-grid {
     @apply grid gap-4 md:grid-cols-2;
+  }
+
+  /* ── Calc MCP markdown result ─────────────────────────────────────── */
+  .mcp-result {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: var(--page-ink);
+  }
+
+  .mcp-result h1,
+  .mcp-result h2,
+  .mcp-result h3 {
+    font-weight: 600;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .mcp-result h2 {
+    font-size: 1rem;
+  }
+
+  .mcp-result h3 {
+    font-size: 0.875rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .mcp-result p {
+    margin-bottom: 0.75rem;
+  }
+
+  .mcp-result ul,
+  .mcp-result ol {
+    padding-left: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .mcp-result li {
+    margin-bottom: 0.25rem;
+  }
+
+  .mcp-result strong {
+    font-weight: 600;
+  }
+
+  .mcp-result table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.25rem;
+    font-size: 0.8125rem;
+  }
+
+  .mcp-result thead tr {
+    background: rgba(16, 185, 129, 0.1);
+  }
+
+  .mcp-result th,
+  .mcp-result td {
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    padding: 0.45rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .dark .mcp-result th,
+  .dark .mcp-result td {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .mcp-result th {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .mcp-result tr:nth-child(even) td {
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  .dark .mcp-result tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .mcp-result hr {
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 1.25rem 0;
   }
 }
 
