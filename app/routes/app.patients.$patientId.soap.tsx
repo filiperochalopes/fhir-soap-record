@@ -228,8 +228,11 @@ function SoapNoteForm(props: {
             required
             value={formState.assessment}
             onChange={(event) => {
-              const value = event.currentTarget.value;
-              setFormState((current) => ({ ...current, assessment: value }));
+              const assessment = event.currentTarget.value;
+              setFormState((current) => ({
+                ...current,
+                assessment,
+              }));
             }}
           />
         </label>
