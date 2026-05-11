@@ -1,8 +1,12 @@
-import { Form, Link, NavLink, Outlet, useLoaderData } from "react-router";
+import { Form, Link, NavLink, Outlet, useFetcher, useLoaderData } from "react-router";
 
 import { cn } from "~/lib/utils";
 
 type LoaderData = {
+  patientPersonalDataPrivacy: {
+    enabled: boolean;
+    visible: boolean;
+  };
   user: {
     crm: string;
     crmUf: string;
@@ -15,8 +19,51 @@ const links = [
   { label: "Agenda", to: "/agenda" },
 ];
 
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="15"
+      viewBox="0 0 22 15"
+      width="22"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        clipRule="evenodd"
+        d="M0 7.5C1.72998 3.10999 6 0 11 0C16 0 20.27 3.10999 22 7.5C20.27 11.89 16 15 11 15C6 15 1.72998 11.89 0 7.5ZM19.8201 7.5C18.17 4.13 14.79 2 11 2C7.21008 2 3.83008 4.13 2.18005 7.5C3.83008 10.87 7.21008 13 11 13C14.79 13 18.17 10.87 19.8201 7.5ZM11 5C12.38 5 13.5 6.12 13.5 7.5C13.5 8.88 12.38 10 11 10C9.62 10 8.5 8.88 8.5 7.5C8.5 6.12 9.62 5 11 5ZM6.5 7.5C6.5 5.02002 8.52002 3 11 3C13.48 3 15.5 5.02002 15.5 7.5C15.5 9.97998 13.48 12 11 12C8.52002 12 6.5 9.97998 6.5 7.5Z"
+        fill="currentColor"
+        fillOpacity="0.54"
+        fillRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      viewBox="0 0 22 20"
+      width="22"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        clipRule="evenodd"
+        d="M3.68994 4.09998L1.01001 1.41998L2.42004 0L20.15 17.74L18.74 19.15L15.3199 15.73C13.98 16.26 12.52 16.55 11 16.55C6 16.55 1.72998 13.44 0 9.04999C0.77002 7.08002 2.06006 5.38 3.68994 4.09998ZM11 3.54999C14.79 3.54999 18.17 5.67999 19.8199 9.04999C19.23 10.27 18.4 11.32 17.41 12.17L18.8199 13.58C20.21 12.35 21.3099 10.81 22 9.04999C20.27 4.65997 16 1.54999 11 1.54999C9.72998 1.54999 8.51001 1.75 7.35999 2.12L9.01001 3.76996C9.66003 3.64001 10.3199 3.54999 11 3.54999ZM9.93005 4.69L12 6.76001C12.5701 7.01001 13.03 7.46997 13.28 8.03998L15.3501 10.11C15.4301 9.76996 15.4901 9.40997 15.4901 9.03998C15.5 6.56 13.4801 4.54999 11 4.54999C10.63 4.54999 10.28 4.59998 9.93005 4.69ZM8.51001 8.91998L11.12 11.53C11.08 11.54 11.04 11.55 11 11.55C9.62 11.55 8.5 10.43 8.5 9.04999C8.5 9.02496 8.50244 9.005 8.505 8.98499C8.50757 8.96497 8.51001 8.94501 8.51001 8.91998ZM6.86011 7.27002L5.11011 5.52002C3.90002 6.44 2.88 7.62 2.18005 9.05005C3.83008 12.42 7.21008 14.55 11 14.55C11.9501 14.55 12.87 14.41 13.75 14.17L12.77 13.19C12.2301 13.42 11.63 13.55 11 13.55C8.52002 13.55 6.5 11.53 6.5 9.05005C6.5 8.42004 6.63 7.82001 6.86011 7.27002Z"
+        fill="currentColor"
+        fillOpacity="0.54"
+        fillRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export function AppShell() {
-  const { user } = useLoaderData() as LoaderData;
+  const { patientPersonalDataPrivacy, user } = useLoaderData() as LoaderData;
+  const privacyFetcher = useFetcher();
   const currentYear = new Date().getFullYear();
 
   return (
@@ -35,6 +82,31 @@ export function AppShell() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {patientPersonalDataPrivacy.enabled ? (
+              <privacyFetcher.Form method="post" action="/settings">
+                <input
+                  name="intent"
+                  type="hidden"
+                  value="toggle-patient-personal-data-visibility"
+                />
+                <button
+                  aria-label={
+                    patientPersonalDataPrivacy.visible
+                      ? "Hide patient personal data"
+                      : "Show patient personal data"
+                  }
+                  className="button-secondary h-11 w-11 rounded-full p-0"
+                  title={
+                    patientPersonalDataPrivacy.visible
+                      ? "Hide patient personal data"
+                      : "Show patient personal data"
+                  }
+                  type="submit"
+                >
+                  {patientPersonalDataPrivacy.visible ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+              </privacyFetcher.Form>
+            ) : null}
             <Link
               aria-label="Settings"
               className="button-secondary h-11 w-11 rounded-full p-0"

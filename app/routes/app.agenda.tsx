@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { requireUserSession } from "~/lib/auth.server";
 import { writeAuditLog } from "~/lib/audit.server";
 import { prisma } from "~/lib/prisma.server";
-import { getUiTimeZone } from "~/lib/settings.server";
+import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
 import {
   formatDateTime,
   getDayRangeForTimeZone,
@@ -40,7 +40,10 @@ export async function loader({ request }: { request: Request }) {
 
   const url = new URL(request.url);
   const dateValue = url.searchParams.get("date");
-  const timeZone = await getUiTimeZone();
+  const [patientPersonalDataPrivacy, timeZone] = await Promise.all([
+    getPatientPersonalDataPrivacy(request),
+    getUiTimeZone(),
+  ]);
   const selectedDate = dateValue ?? getTodayDateInputValue(timeZone);
   const dayRange = getDayRangeForTimeZone(selectedDate, timeZone);
 
@@ -61,6 +64,7 @@ export async function loader({ request }: { request: Request }) {
 
   return {
     appointments,
+    blurPatientPersonalData: patientPersonalDataPrivacy.shouldBlur,
     date: selectedDate,
     timeZone,
   };
@@ -130,8 +134,9 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function AgendaRoute() {
-  const { appointments, date, timeZone } = useLoaderData<typeof loader>();
+  const { appointments, blurPatientPersonalData, date, timeZone } = useLoaderData<typeof loader>();
   const submit = useSubmit();
+  const sensitiveClassName = blurPatientPersonalData ? "privacy-blur" : undefined;
 
   return (
     <div className="space-y-6">
@@ -180,10 +185,19 @@ export default function AgendaRoute() {
             <tbody>
               {appointments.length ? (
                 appointments.map((appointment) => (
-                  <tr className="border-t border-black/5 dark:border-white/10" key={appointment.id}>
-                    <td className="px-5 py-4 font-medium">{appointment.patient.name}</td>
-                    <td className="px-5 py-4">{formatDateTime(appointment.start, { timeZone })}</td>
-                    <td className="px-5 py-4">{formatDateTime(appointment.end, { timeZone })}</td>
+                  <tr
+                    className="border-t border-black/5 dark:border-white/10"
+                    key={appointment.id}
+                  >
+                    <td className="px-5 py-4 font-medium">
+                      <span className={sensitiveClassName}>{appointment.patient.name}</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      {formatDateTime(appointment.start, { timeZone })}
+                    </td>
+                    <td className="px-5 py-4">
+                      {formatDateTime(appointment.end, { timeZone })}
+                    </td>
                     <td className="px-5 py-4">
                       <Form method="post">
                         <input name="appointmentId" type="hidden" value={appointment.id} />

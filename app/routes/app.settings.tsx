@@ -7,7 +7,14 @@ import { requireUserSession } from "~/lib/auth.server";
 import { getExportOverview } from "~/lib/export.server";
 import { importFhirBundle } from "~/lib/import.server";
 import { prisma } from "~/lib/prisma.server";
-import { getUiTimeZone, setUiTimeZone } from "~/lib/settings.server";
+import {
+  getBlurPatientPersonalData,
+  getPatientPersonalDataPrivacy,
+  getUiTimeZone,
+  setPatientPersonalDataVisibleCookie,
+  setBlurPatientPersonalData,
+  setUiTimeZone,
+} from "~/lib/settings.server";
 import {
   formatDateTime,
   formatTimeZoneOffsetLabel,
@@ -31,6 +38,7 @@ type SettingsActionData = {
   error?: string;
   importedAt?: string;
   results?: ImportReportItem[];
+  savedBlurPatientPersonalData?: boolean;
   savedTimeZone?: string;
   settingsError?: string;
   totals?: {
@@ -45,17 +53,26 @@ type SettingsActionData = {
 
 export async function loader({ request }: { request: Request }) {
   await requireUserSession(request);
-  const [overview, timeZone] = await Promise.all([getExportOverview(), getUiTimeZone()]);
+  const [blurPatientPersonalData, overview, timeZone] = await Promise.all([
+    getBlurPatientPersonalData(),
+    getExportOverview(),
+    getUiTimeZone(),
+  ]);
 
   return {
     ...overview,
+    blurPatientPersonalData,
     timePreview: formatDateTime(new Date(), { timeZone }),
     timeZone,
     timeZoneOffset: formatTimeZoneOffsetLabel(timeZone),
   };
 }
 
-export async function action({ request }: { request: Request }): Promise<SettingsActionData> {
+export async function action({
+  request,
+}: {
+  request: Request;
+}): Promise<SettingsActionData | Response> {
   const auth = await requireUserSession(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "import");
@@ -78,6 +95,31 @@ export async function action({ request }: { request: Request }): Promise<Setting
     return {
       savedTimeZone: await setUiTimeZone(rawTimeZone),
     };
+  }
+
+  if (intent === "save-privacy") {
+    const savedBlurPatientPersonalData = await setBlurPatientPersonalData(
+      formData.get("blurPatientPersonalData") === "on",
+    );
+
+    return new Response(JSON.stringify({ savedBlurPatientPersonalData }), {
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": setPatientPersonalDataVisibleCookie(false),
+      },
+    });
+  }
+
+  if (intent === "toggle-patient-personal-data-visibility") {
+    const currentPrivacy = await getPatientPersonalDataPrivacy(request);
+    const nextVisible = currentPrivacy.enabled && !currentPrivacy.visible;
+
+    return new Response(JSON.stringify({ visible: nextVisible }), {
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": setPatientPersonalDataVisibleCookie(nextVisible),
+      },
+    });
   }
 
   const actor = await prisma.authUser.findUniqueOrThrow({
@@ -425,8 +467,67 @@ function TimeZoneSettings(props: {
   );
 }
 
+function PrivacySettings(props: { blurPatientPersonalData: boolean }) {
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const isSubmitting =
+    navigation.state === "submitting" && navigation.formData?.get("intent") === "save-privacy";
+
+  return (
+    <section className="panel space-y-5 p-6">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+          Privacy
+        </p>
+        <h2 className="text-xl font-semibold tracking-tight">Patient personal data</h2>
+        <p className="max-w-3xl text-sm text-[color:var(--muted)]">
+          Blur patient name, birth date, and CPF/identifier on Patients, Agenda, and SOAP screens
+          for videos, recordings, and third-party demonstrations.
+        </p>
+      </div>
+
+      <Form className="space-y-4" method="post">
+        <input name="intent" type="hidden" value="save-privacy" />
+        <label className="flex items-start gap-3 rounded-3xl border border-black/5 bg-black/[0.03] p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <input
+            defaultChecked={props.blurPatientPersonalData}
+            name="blurPatientPersonalData"
+            type="checkbox"
+          />
+          <span>
+            <span className="block text-sm font-semibold">Ocultar dados pessoais do paciente</span>
+            <span className="mt-1 block text-sm text-[color:var(--muted)]">
+              Aplica blur em nome, data de nascimento e CPF/identificador sem alterar os dados
+              salvos.
+            </span>
+          </span>
+        </label>
+
+        {typeof actionData?.savedBlurPatientPersonalData === "boolean" ? (
+          <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
+            Privacy setting updated.
+          </p>
+        ) : null}
+
+        <div className="flex justify-end">
+          <button className="button-primary" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Saving..." : "Save privacy"}
+          </button>
+        </div>
+      </Form>
+    </section>
+  );
+}
+
 export default function SettingsRoute() {
-  const { counts, namespace, timePreview, timeZone, timeZoneOffset } = useLoaderData<typeof loader>();
+  const {
+    blurPatientPersonalData,
+    counts,
+    namespace,
+    timePreview,
+    timeZone,
+    timeZoneOffset,
+  } = useLoaderData<typeof loader>();
 
   return (
     <div className="space-y-6">
@@ -451,6 +552,8 @@ export default function SettingsRoute() {
         timeZone={timeZone}
         timeZoneOffset={timeZoneOffset}
       />
+
+      <PrivacySettings blurPatientPersonalData={blurPatientPersonalData} />
 
       <section className="panel space-y-5 p-6">
         <div className="space-y-2">

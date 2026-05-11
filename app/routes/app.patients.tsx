@@ -3,7 +3,7 @@ import { Form, Link, useLoaderData, useSubmit } from "react-router";
 
 import { requireUserSession } from "~/lib/auth.server";
 import { prisma } from "~/lib/prisma.server";
-import { getUiTimeZone } from "~/lib/settings.server";
+import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
 import { formatDate, formatPatientAge } from "~/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -51,7 +51,10 @@ export async function loader({ request }: { request: Request }) {
   const query = url.searchParams.get("q")?.trim() ?? "";
   const requestedPage = parsePage(url.searchParams.get("page"));
   const where = buildPatientsFilter(query);
-  const timeZone = await getUiTimeZone();
+  const [patientPersonalDataPrivacy, timeZone] = await Promise.all([
+    getPatientPersonalDataPrivacy(request),
+    getUiTimeZone(),
+  ]);
 
   const totalPatients = await prisma.patient.count({ where });
   const totalPages = Math.max(1, Math.ceil(totalPatients / PAGE_SIZE));
@@ -73,6 +76,7 @@ export async function loader({ request }: { request: Request }) {
 
   return {
     currentPage,
+    blurPatientPersonalData: patientPersonalDataPrivacy.shouldBlur,
     pageSize: PAGE_SIZE,
     patients,
     query,
@@ -180,8 +184,16 @@ function Pagination(props: {
 }
 
 export default function PatientsRoute() {
-  const { currentPage, patients, query, timeZone, totalPages, totalPatients } =
-    useLoaderData<typeof loader>();
+  const {
+    blurPatientPersonalData,
+    currentPage,
+    patients,
+    query,
+    timeZone,
+    totalPages,
+    totalPatients,
+  } = useLoaderData<typeof loader>();
+  const sensitiveClassName = blurPatientPersonalData ? "privacy-blur" : undefined;
 
   return (
     <div className="space-y-6">
@@ -210,7 +222,13 @@ export default function PatientsRoute() {
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="text-xl font-semibold">{patient.name}</h3>
+                      <h3
+                        className={["text-xl font-semibold", sensitiveClassName]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {patient.name}
+                      </h3>
                       {patientAge ? (
                         <span className="text-sm font-medium text-[color:var(--muted)]">
                           {patientAge}
@@ -223,10 +241,12 @@ export default function PatientsRoute() {
                       ) : null}
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
-                      <span>{patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}</span>
+                      <span className={sensitiveClassName}>
+                        {patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}
+                      </span>
                       <span className="uppercase">{patient.gender}</span>
                       {patient.identifier[0] ? (
-                        <span>
+                        <span className={sensitiveClassName}>
                           {patient.identifier[0].system}: {patient.identifier[0].value}
                         </span>
                       ) : null}

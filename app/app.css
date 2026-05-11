@@ -181,6 +181,12 @@
     @apply mb-1 block text-xs font-semibold uppercase tracking-[0.18em];
   }
 
+  .privacy-blur {
+    filter: blur(7px);
+    opacity: 0.72;
+    user-select: none;
+  }
+
   .form-grid {
     @apply grid gap-4 md:grid-cols-2;
   }

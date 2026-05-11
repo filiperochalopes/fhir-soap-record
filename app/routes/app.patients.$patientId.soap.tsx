@@ -19,7 +19,7 @@ import {
   getPatientNarrativeNotes,
 } from "~/lib/narrative-notes.server";
 import { prisma } from "~/lib/prisma.server";
-import { getUiTimeZone } from "~/lib/settings.server";
+import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
 import { createSoapNote, getPatientSoapNotes } from "~/lib/soap-notes.server";
 import { parseNarrativeForm } from "~/lib/validation/narrative";
 import { parseSoapForm } from "~/lib/validation/soap";
@@ -364,7 +364,8 @@ export async function loader({
   const patientId = Number(params.patientId);
   const url = new URL(request.url);
   const appointmentId = parseOptionalPositiveInt(url.searchParams.get("appointmentId"));
-  const [patient, timeZone] = await Promise.all([
+  const [patientPersonalDataPrivacy, patient, timeZone] = await Promise.all([
+    getPatientPersonalDataPrivacy(request),
     prisma.patient.findUnique({
       where: { id: patientId },
       include: {
@@ -431,6 +432,7 @@ export async function loader({
   ].sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
 
   return {
+    blurPatientPersonalData: patientPersonalDataPrivacy.shouldBlur,
     defaultEncounteredAt: toDateTimeLocalValue(linkedAppointment?.start ?? new Date(), timeZone),
     linkedAppointment,
     patient,
@@ -527,13 +529,21 @@ export async function action({
 }
 
 export default function SoapRoute() {
-  const { defaultEncounteredAt, linkedAppointment, patient, previousNotes, soapNoteCount, timeZone } =
-    useLoaderData<typeof loader>();
+  const {
+    blurPatientPersonalData,
+    defaultEncounteredAt,
+    linkedAppointment,
+    patient,
+    previousNotes,
+    soapNoteCount,
+    timeZone,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const patientAge = formatPatientAge(patient.birthDate, { timeZone });
   const savedType = searchParams.get("saved");
+  const sensitiveClassName = blurPatientPersonalData ? "privacy-blur" : undefined;
 
   const draftStorageKey = linkedAppointment
     ? `patient:${patient.id}:appointment:${linkedAppointment.id}:draft:soap`
@@ -569,7 +579,13 @@ export default function SoapRoute() {
               Clinical registration
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h2 className="text-3xl font-semibold">{patient.name}</h2>
+              <h2
+                className={["text-3xl font-semibold", sensitiveClassName]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {patient.name}
+              </h2>
               {patientAge ? (
                 <span className="text-sm font-medium text-[color:var(--muted)]">{patientAge}</span>
               ) : null}
@@ -580,10 +596,12 @@ export default function SoapRoute() {
               ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
-              <span>{patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}</span>
+              <span className={sensitiveClassName}>
+                {patient.birthDate ? formatDate(patient.birthDate) : "Birth date pending"}
+              </span>
               <span className="uppercase">{patient.gender}</span>
               {patient.identifier[0] ? (
-                <span>
+                <span className={sensitiveClassName}>
                   {patient.identifier[0].system}: {patient.identifier[0].value}
                 </span>
               ) : null}
