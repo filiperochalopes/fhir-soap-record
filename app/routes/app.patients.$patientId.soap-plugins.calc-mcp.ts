@@ -1,7 +1,7 @@
 import { requireUserSession } from "~/lib/auth.server";
-import { runCalcMcpAgent } from "~/lib/ai/mcp.server";
+import { runSingleToolAgent } from "~/lib/ai/mcp.server";
 import { prisma } from "~/lib/prisma.server";
-import { anonymizePayload } from "~/lib/soap-plugins/anonymize";
+import { buildAnonymizedSoapText } from "~/lib/soap-plugins/anonymize";
 import { getPatientSoapNotes } from "~/lib/soap-notes.server";
 
 export async function action({
@@ -28,7 +28,13 @@ export async function action({
   }
 
   const formData = await request.formData();
+  const toolName = String(formData.get("toolName") ?? "").trim();
+  const toolTitle = String(formData.get("toolTitle") ?? toolName).trim();
   const scope = formData.get("scope") === "current_history" ? "current_history" : "current";
+
+  if (!toolName) {
+    return Response.json({ error: "toolName não informado." }, { status: 400 });
+  }
 
   const draft = {
     subjective: String(formData.get("subjective") ?? ""),
@@ -39,10 +45,9 @@ export async function action({
 
   const hasDraft = Object.values(draft).some((value) => value.trim().length > 0);
   if (!hasDraft) {
-    return Response.json(
-      { error: "Preencha ao menos um campo do SOAP em edição antes de executar." },
-      { status: 400 },
-    );
+    return Response.json({
+      error: "Preencha ao menos um campo do SOAP em edição antes de executar.",
+    });
   }
 
   let history: Array<{
@@ -64,32 +69,33 @@ export async function action({
     }));
   }
 
-  const payload = anonymizePayload({
+  const anonymized = buildAnonymizedSoapText({
     patient,
     current: draft,
     history: history.length ? history : undefined,
   });
 
-  if (!payload) {
-    return Response.json(
-      { error: "Idade indisponível, não é possível calcular scores." },
-      { status: 400 },
-    );
+  if (!anonymized) {
+    return Response.json({
+      error: "Idade indisponível, não é possível calcular scores.",
+    });
   }
 
   try {
-    const { narrative, toolResults } = await runCalcMcpAgent(payload);
-    return Response.json({ narrative, toolResults, request: payload });
+    const { narrative, toolResults } = await runSingleToolAgent({
+      toolName,
+      toolTitle,
+      soapText: anonymized.text,
+      patientMeta: { ageLabel: anonymized.ageLabel, sex: anonymized.sex },
+    });
+    return Response.json({ narrative, toolResults, request: anonymized.text });
   } catch (error) {
     console.error("Calc MCP agent failed", error);
-    return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Falha ao executar o agente MCP.",
-      },
-      { status: 500 },
-    );
+    return Response.json({
+      error:
+        error instanceof Error
+          ? error.message
+          : "Falha ao executar o agente MCP.",
+    });
   }
 }

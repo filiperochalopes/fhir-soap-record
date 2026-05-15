@@ -445,6 +445,20 @@ export async function loader({
   };
 }
 
+export function shouldRevalidate({
+  defaultShouldRevalidate,
+  formAction,
+}: {
+  defaultShouldRevalidate: boolean;
+  formAction?: string;
+}) {
+  if (formAction?.includes("/soap-plugins/")) {
+    return false;
+  }
+
+  return defaultShouldRevalidate;
+}
+
 export async function action({
   params,
   request,

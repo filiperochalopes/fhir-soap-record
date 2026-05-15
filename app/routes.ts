@@ -28,6 +28,10 @@ export default [
       "patients/:patientId/soap-plugins/calc-mcp",
       "routes/app.patients.$patientId.soap-plugins.calc-mcp.ts",
     ),
+    route(
+      "patients/:patientId/soap-plugins/calc-mcp-tools",
+      "routes/app.patients.$patientId.soap-plugins.calc-mcp-tools.ts",
+    ),
     route("agenda", "routes/app.agenda.tsx"),
     route("settings/export", "routes/app.settings.export.ts"),
     route("settings", "routes/app.settings.tsx"),
