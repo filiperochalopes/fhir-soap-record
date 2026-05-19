@@ -11,6 +11,8 @@ import {
 import { ZodError } from "zod";
 
 import { ClinicalHistory } from "~/components/clinical-history";
+import { ResizableSplit } from "~/components/soap/ResizableSplit";
+import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
 import { soapPlugins } from "~/lib/soap-plugins/registry";
 import { requireUserSession } from "~/lib/auth.server";
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
@@ -562,6 +564,39 @@ export default function SoapRoute() {
   const savedType = searchParams.get("saved");
   const sensitiveClassName = blurPatientPersonalData ? "privacy-blur" : undefined;
 
+  const [noteType, setNoteType] = useState<"soap" | "narrative">(
+    savedType === "narrative" ? "narrative" : "soap",
+  );
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isXlViewport, setIsXlViewport] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("soap:split:open");
+      if (stored !== null) setSidebarOpen(stored === "true");
+    } catch {
+      // ignore
+    }
+    const mq = window.matchMedia("(min-width: 1280px)");
+    setIsXlViewport(mq.matches);
+    const listener = (e: MediaQueryListEvent) => setIsXlViewport(e.matches);
+    mq.addEventListener("change", listener);
+    return () => mq.removeEventListener("change", listener);
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("soap:split:open", String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   const draftStorageKey = linkedAppointment
     ? `patient:${patient.id}:appointment:${linkedAppointment.id}:draft:soap`
     : `patient:${patient.id}:draft:soap`;
@@ -587,8 +622,49 @@ export default function SoapRoute() {
     navigate(`/patients/${patient.id}/soap`, { replace: true });
   }, [navigate, patient.id, savedType]);
 
+  const contextPanel = (
+    <div className="space-y-4">
+      <ClinicalHistory notes={previousNotes} timeZone={timeZone} />
+      {soapPlugins.map((plugin) => (
+        <plugin.Card
+          draftStorageKey={draftStorageKey}
+          key={plugin.id}
+          patient={patient}
+          patientId={patient.id}
+          soapNoteCount={soapNoteCount}
+          timeZone={timeZone}
+        />
+      ))}
+    </div>
+  );
+
+  const editorPanel = patient.active ? (
+    <div className="space-y-4">
+      {actionData?.error ? (
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+          {actionData.error}
+        </p>
+      ) : null}
+      {noteType === "soap" ? (
+        <SoapNoteForm
+          defaultEncounteredAt={defaultEncounteredAt}
+          linkedAppointment={linkedAppointment}
+          patientId={patient.id}
+          resetDraft={savedType === "soap"}
+          timeZone={timeZone}
+        />
+      ) : (
+        <NarrativeNoteForm
+          defaultEncounteredAt={defaultEncounteredAt}
+          patientId={patient.id}
+          resetDraft={savedType === "narrative"}
+        />
+      )}
+    </div>
+  ) : null;
+
   return (
-    <div className="space-y-6">
+    <div className="relative left-1/2 w-screen max-w-[1536px] -translate-x-1/2 space-y-6 px-4 sm:px-6 lg:px-8">
       <section className="panel p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -634,6 +710,7 @@ export default function SoapRoute() {
           </div>
         </div>
       </section>
+
       {patient.isDraft ? (
         <p className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm">
           This patient is still marked as draft. Complete the registration when the missing data
@@ -652,41 +729,57 @@ export default function SoapRoute() {
         </p>
       ) : null}
 
-      {soapPlugins.map((plugin) => (
-        <plugin.Card
-          draftStorageKey={draftStorageKey}
-          key={plugin.id}
-          patient={patient}
-          patientId={patient.id}
-          soapNoteCount={soapNoteCount}
-          timeZone={timeZone}
-        />
-      ))}
-
-      <ClinicalHistory notes={previousNotes} timeZone={timeZone} />
-
-      {actionData?.error ? (
-        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
-          {actionData.error}
-        </p>
-      ) : null}
-
       {patient.active ? (
-        <div className="grid gap-6 xl:grid-cols-2">
-          <SoapNoteForm
-            defaultEncounteredAt={defaultEncounteredAt}
-            linkedAppointment={linkedAppointment}
-            patientId={patient.id}
-            resetDraft={savedType === "soap"}
-            timeZone={timeZone}
+        <div className="flex items-center justify-between gap-3">
+          <SegmentedControl
+            onChange={setNoteType}
+            options={[
+              { label: "SOAP note", value: "soap" },
+              { label: "Narrative note", value: "narrative" },
+            ]}
+            tone="violet"
+            value={noteType}
           />
-          <NarrativeNoteForm
-            defaultEncounteredAt={defaultEncounteredAt}
-            patientId={patient.id}
-            resetDraft={savedType === "narrative"}
-          />
+          {isXlViewport ? (
+            <button
+              aria-label={sidebarOpen ? "Collapse context panel" : "Expand context panel"}
+              aria-pressed={sidebarOpen}
+              className="rounded-full border border-[color:var(--panel-border)] bg-white/50 p-2 text-[color:var(--muted)] transition hover:bg-white/80 hover:text-[color:var(--foreground)] dark:bg-slate-950/40 dark:hover:bg-slate-900/60"
+              onClick={toggleSidebar}
+              title={sidebarOpen ? "Collapse context panel" : "Expand context panel"}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                fill="none"
+                height="20"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                width="20"
+              >
+                <path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2H6a2 2 0 0 1 -2 -2z" />
+                <path d="M15 4v16" />
+                <path
+                  className="origin-[10px_12px] transition-transform duration-200"
+                  d="m9 10 2 2 -2 2"
+                  style={{ transform: sidebarOpen ? "rotate(0deg)" : "rotate(180deg)" }}
+                />
+              </svg>
+            </button>
+          ) : null}
         </div>
       ) : null}
+
+      <ResizableSplit
+        left={editorPanel ?? <div />}
+        onOpenChange={setSidebarOpen}
+        open={sidebarOpen}
+        right={contextPanel}
+        storageKey="soap:split"
+      />
     </div>
   );
 }

@@ -33,11 +33,14 @@
 
   body {
     color: var(--page-ink);
-    background:
+    background-color: var(--page-bg);
+    background-image:
       radial-gradient(circle at top left, rgba(234, 216, 176, 0.45), transparent 28%),
       radial-gradient(circle at top right, rgba(194, 65, 12, 0.12), transparent 32%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 28%),
-      var(--page-bg);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 70%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: 100% 520px;
     @apply min-h-screen antialiased;
   }
 

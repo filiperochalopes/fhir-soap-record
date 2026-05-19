@@ -48,7 +48,7 @@ export function PluginCard(props: {
         <div className="flex items-center gap-3">
           {props.badge ? (
             <div
-              className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${chipClass[tone]}`}
+              className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${chipClass[tone]}`}
             >
               {props.badge}
             </div>
