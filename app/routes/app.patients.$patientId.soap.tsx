@@ -13,7 +13,7 @@ import { ZodError } from "zod";
 import { ClinicalHistory } from "~/components/clinical-history";
 import { ResizableSplit } from "~/components/soap/ResizableSplit";
 import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
-import { soapPlugins } from "~/lib/soap-plugins/registry";
+import { genericPlugins, soapPlugins } from "~/lib/soap-plugins/registry";
 import { requireUserSession } from "~/lib/auth.server";
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import {
@@ -114,6 +114,7 @@ function useBeforeUnloadWarning(when: boolean) {
 }
 
 function SoapNoteForm(props: {
+  attachmentDraftKey: string;
   defaultEncounteredAt: string;
   linkedAppointment: LinkedAppointment | null;
   patientId: number;
@@ -179,6 +180,7 @@ function SoapNoteForm(props: {
       </div>
       <Form className="mt-8 space-y-5" method="post">
         <input name="noteType" type="hidden" value="soap" />
+        <input name="attachmentDraftKey" type="hidden" value={props.attachmentDraftKey} />
         {props.linkedAppointment ? (
           <input
             name="appointmentId"
@@ -261,6 +263,7 @@ function SoapNoteForm(props: {
 }
 
 function NarrativeNoteForm(props: {
+  attachmentDraftKey: string;
   defaultEncounteredAt: string;
   patientId: number;
   resetDraft: boolean;
@@ -310,6 +313,7 @@ function NarrativeNoteForm(props: {
       </div>
       <Form className="mt-8 space-y-5" method="post">
         <input name="noteType" type="hidden" value="narrative" />
+        <input name="attachmentDraftKey" type="hidden" value={props.attachmentDraftKey} />
         <label className="block">
           <span className="field-label">Encounter date and time</span>
           <input
@@ -502,6 +506,7 @@ export async function action({
     if (noteType === "narrative") {
       const input = parseNarrativeForm(formData, timeZone);
       await createNarrativeNote({
+        attachmentDraftKey: String(formData.get("attachmentDraftKey") ?? ""),
         authorUserId: auth.user.id,
         encounteredAt: input.encounteredAt,
         patientId: Number(params.patientId),
@@ -518,6 +523,7 @@ export async function action({
       await createSoapNote({
         ...input,
         appointmentId,
+        attachmentDraftKey: String(formData.get("attachmentDraftKey") ?? ""),
         authorUserId: auth.user.id,
         patientId: Number(params.patientId),
       });
@@ -600,6 +606,8 @@ export default function SoapRoute() {
   const draftStorageKey = linkedAppointment
     ? `patient:${patient.id}:appointment:${linkedAppointment.id}:draft:soap`
     : `patient:${patient.id}:draft:soap`;
+  const narrativeDraftStorageKey = `patient:${patient.id}:draft:narrative`;
+  const activeDraftStorageKey = noteType === "soap" ? draftStorageKey : narrativeDraftStorageKey;
 
   useEffect(() => {
     if (!savedType) {
@@ -625,6 +633,16 @@ export default function SoapRoute() {
   const contextPanel = (
     <div className="space-y-4">
       <ClinicalHistory notes={previousNotes} timeZone={timeZone} />
+      {genericPlugins.map((plugin) => (
+        <plugin.Card
+          appointmentId={linkedAppointment?.id ?? null}
+          draftStorageKey={activeDraftStorageKey}
+          key={plugin.id}
+          noteType={noteType}
+          patientId={patient.id}
+          timeZone={timeZone}
+        />
+      ))}
       {soapPlugins.map((plugin) => (
         <plugin.Card
           draftStorageKey={draftStorageKey}
@@ -647,6 +665,7 @@ export default function SoapRoute() {
       ) : null}
       {noteType === "soap" ? (
         <SoapNoteForm
+          attachmentDraftKey={draftStorageKey}
           defaultEncounteredAt={defaultEncounteredAt}
           linkedAppointment={linkedAppointment}
           patientId={patient.id}
@@ -655,6 +674,7 @@ export default function SoapRoute() {
         />
       ) : (
         <NarrativeNoteForm
+          attachmentDraftKey={narrativeDraftStorageKey}
           defaultEncounteredAt={defaultEncounteredAt}
           patientId={patient.id}
           resetDraft={savedType === "narrative"}

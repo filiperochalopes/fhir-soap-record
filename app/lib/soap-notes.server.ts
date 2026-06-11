@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
+import { promoteDraftAttachments } from "~/lib/attachments.server";
 import { prisma } from "~/lib/prisma.server";
 import type { SoapNoteInput } from "~/lib/validation/soap";
 
@@ -9,6 +10,7 @@ type SoapClient = PrismaClient | Prisma.TransactionClient;
 type SoapCreateInput = SoapNoteInput & {
   appointmentId?: number | null;
   authorUserId: number;
+  attachmentDraftKey?: string | null;
   patientId: number;
   sourceRecordId?: string | null;
   sourceSystem?: string | null;
@@ -101,6 +103,17 @@ async function createSoapNoteInTransaction(
       : undefined,
     userId: input.authorUserId,
   });
+
+  await promoteDraftAttachments(
+    {
+      appointmentId: input.appointmentId ?? null,
+      authorUserId: input.authorUserId,
+      draftKey: input.attachmentDraftKey,
+      patientId: input.patientId,
+      soapNoteId: soapNote.id,
+    },
+    db,
+  );
 
   return soapNote;
 }

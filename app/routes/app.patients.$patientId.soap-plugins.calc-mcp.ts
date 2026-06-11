@@ -4,6 +4,24 @@ import { prisma } from "~/lib/prisma.server";
 import { buildAnonymizedSoapText } from "~/lib/soap-plugins/anonymize";
 import { getPatientSoapNotes } from "~/lib/soap-notes.server";
 
+function isImcTool(toolName: string) {
+  return toolName === "imc" || toolName.endsWith("__imc");
+}
+
+function objectiveOnly<T extends {
+  assessment: string;
+  objective: string;
+  plan: string;
+  subjective: string;
+}>(draft: T): T {
+  return {
+    ...draft,
+    assessment: "N/A",
+    plan: "N/A",
+    subjective: "N/A",
+  };
+}
+
 export async function action({
   params,
   request,
@@ -35,6 +53,7 @@ export async function action({
   if (!toolName) {
     return Response.json({ error: "toolName não informado." }, { status: 400 });
   }
+  const imcTool = isImcTool(toolName);
 
   const draft = {
     subjective: String(formData.get("subjective") ?? ""),
@@ -43,10 +62,14 @@ export async function action({
     plan: String(formData.get("plan") ?? ""),
   };
 
-  const hasDraft = Object.values(draft).some((value) => value.trim().length > 0);
+  const hasDraft = imcTool
+    ? draft.objective.trim().length > 0
+    : Object.values(draft).some((value) => value.trim().length > 0);
   if (!hasDraft) {
     return Response.json({
-      error: "Preencha ao menos um campo do SOAP em edição antes de executar.",
+      error: imcTool
+        ? "Preencha o campo objetivo do SOAP em edição antes de executar o IMC."
+        : "Preencha ao menos um campo do SOAP em edição antes de executar.",
     });
   }
 
@@ -71,8 +94,12 @@ export async function action({
 
   const anonymized = buildAnonymizedSoapText({
     patient,
-    current: draft,
-    history: history.length ? history : undefined,
+    current: imcTool ? objectiveOnly(draft) : draft,
+    history: history.length
+      ? imcTool
+        ? history.map(objectiveOnly)
+        : history
+      : undefined,
   });
 
   if (!anonymized) {

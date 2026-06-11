@@ -14,6 +14,8 @@ export default [
   route("fhir/Appointment/:id", "routes/fhir.Appointment.$id.ts"),
   route("fhir/Composition", "routes/fhir.Composition.ts"),
   route("fhir/Composition/:id", "routes/fhir.Composition.$id.ts"),
+  route("fhir/DocumentReference", "routes/fhir.DocumentReference.ts"),
+  route("fhir/DocumentReference/:id", "routes/fhir.DocumentReference.$id.ts"),
   route("fhir/Encounter/:id", "routes/fhir.Encounter.$id.ts"),
   route("fhir/Observation/:id", "routes/fhir.Observation.$id.ts"),
   route("fhir/Condition/:id", "routes/fhir.Condition.$id.ts"),
@@ -23,7 +25,9 @@ export default [
     route("patients/new", "routes/app.patients.new.tsx"),
     route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
     route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
+    route("patients/:patientId/attachments", "routes/app.patients.$patientId.attachments.ts"),
     route("patients/:patientId/summary", "routes/app.patients.$patientId.summary.ts"),
+    route("attachments/:attachmentId/download", "routes/app.attachments.$attachmentId.download.ts"),
     route(
       "patients/:patientId/soap-plugins/calc-mcp",
       "routes/app.patients.$patientId.soap-plugins.calc-mcp.ts",

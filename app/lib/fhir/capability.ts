@@ -53,6 +53,7 @@ export function capabilityStatement(baseUrl: string) {
             searchInclude: ["Appointment:patient"],
           },
           { type: "Composition", interaction: [{ code: "read" }, { code: "search-type" }] },
+          { type: "DocumentReference", interaction: [{ code: "read" }, { code: "search-type" }] },
           { type: "Encounter", interaction: [{ code: "read" }] },
           { type: "Observation", interaction: [{ code: "read" }] },
           { type: "Condition", interaction: [{ code: "read" }] },

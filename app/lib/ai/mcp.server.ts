@@ -15,8 +15,88 @@ export type AgentResult = {
   toolResults: ToolCallResult[];
 };
 
-function buildSystemPrompt() {
-  return `Você é um assistente clínico de suporte à estratificação de risco.
+const IMC_TOOL_GUIDANCE = `
+## Orientações específicas — IMC
+
+Após o cálculo, **sempre** informe o peso-alvo correspondente, usando os campos retornados pela tool:
+
+- **Adulto** (\`criterio_classificacao: adulto_who\`) — use \`pesos_por_imc\`:
+  - \`imc_18_5\` = limite inferior da eutrofia
+  - \`imc_24_9\` = limite superior da eutrofia
+  - \`imc_29_9\` = limite superior do sobrepeso (início da obesidade)
+- **Pediátrico** (\`who_bmi_for_age_0_5_anos\` ou \`who_2007_bmi_for_age_5_19_anos\`) — use \`pesos_por_z_score\`:
+  - \`z_score_neg_1\` = limite inferior da eutrofia (z = -1)
+  - \`z_score_1\` = limite superior da eutrofia (z = +1)
+
+## Formato de saída — IMC (sobrescreve o formato geral)
+
+A resposta deve conter **exclusivamente** uma tabela Markdown Aspecto/Resultado. **Sem** título, **sem** seções "Interpretação clínica", "Fatores agravantes", "Achados laboratoriais", **sem** texto antes ou depois da tabela.
+
+Linhas obrigatórias da tabela:
+- IMC (valor numérico)
+- Categoria
+- Critério de classificação
+- Z-Score (apenas se pediátrico)
+
+Linha(s) de peso-alvo — **somente se a categoria não for eutrofia**:
+- **Baixo peso**: adicione "Peso-alvo (eutrofia)" com o valor do limite inferior (\`imc_18_5\` em adulto, \`z_score_neg_1\` em pediátrico) e indique entre parênteses quantos kg precisam ser **ganhos**.
+- **Sobrepeso**: adicione "Peso-alvo (eutrofia)" com o limite superior (\`imc_24_9\` em adulto, \`z_score_1\` em pediátrico) e os kg a **perder**.
+- **Obesidade** (adulto): adicione **duas** linhas — "Peso-alvo (sair da obesidade)" usando \`imc_29_9\` e "Peso-alvo (eutrofia)" usando \`imc_24_9\`, ambas com os kg a perder.
+- **Eutrofia**: **não** inclua linha de peso-alvo.
+`.trim();
+
+const PREVENT_TOOL_GUIDANCE = `
+## Orientações específicas — risco cardiovascular PREVENT
+
+Use estas regras quando a tool calcular risco cardiovascular PREVENT/AHA ou estratificação cardiovascular baseada no PREVENT.
+
+## Formato de saída — PREVENT cardiovascular (sobrescreve o formato geral)
+
+A resposta deve ser curta e objetiva. Não use as seções gerais "Fatores agravantes identificados", "Achados laboratoriais relevantes" ou "Interpretação clínica".
+
+Se o score foi calculado, responda nesta ordem:
+
+1. Uma tabela Markdown com estas colunas:
+
+| Item | 5 anos | 10 anos | 30 anos | Observação |
+|---|---:|---:|---:|---|
+
+Linhas obrigatórias:
+- **Risco PREVENT basal**: risco calculado pela tool antes de variáveis modificadoras, se a tool retornar esse valor. Se não retornar, use "Não retornado".
+- **Variáveis modificadoras aplicadas**: liste somente as variáveis modificadoras efetivamente presentes/aplicadas. Se nenhuma, escreva "Nenhuma".
+- **Risco cardiovascular final**: risco após variáveis modificadoras. Se for igual ao PREVENT basal, deixe isso explícito na observação.
+- **Classificação final**: baixo/intermediário/alto ou a categoria retornada pela tool. Na observação, cite o racional em uma frase curta.
+
+Regras para percentuais:
+- Sempre que a tool retornar riscos em 5, 10 e 30 anos, mostre os três horizontes na tabela.
+- Se a tool retornar risco basal e risco final em 5, 10 e 30 anos, mostre ambos.
+- Se algum horizonte não for retornado, escreva "Não retornado"; não estime.
+
+2. Abaixo da tabela, escreva **um parágrafo curto** explicando por que essa é a classificação final e o que os percentuais representam. Evite narrativa longa.
+
+3. Se o risco final for diferente do risco PREVENT basal, escreva **uma frase curta** dizendo quais variáveis modificadoras mudaram o resultado. Se não mudou, omita essa frase.
+
+4. Escreva **um segundo parágrafo curto**, somente se útil, com perguntas/dados que poderiam melhorar a avaliação. Priorize variáveis ausentes plausivelmente relevantes para esse paciente. Use linguagem clínica direta, não nomes técnicos de variáveis.
+
+Se faltarem dados obrigatórios, use apenas:
+
+## Informações adicionais solicitadas
+
+Liste perguntas objetivas para permitir o cálculo do PREVENT. Inclua os horizontes de risco apenas depois de calculados.
+`.trim();
+
+function isPreventTool(toolName?: string, toolTitle?: string) {
+  const text = `${toolName ?? ""} ${toolTitle ?? ""}`.toLowerCase();
+  return (
+    text.includes("prevent") ||
+    text.includes("cardiovascular") ||
+    text.includes("cardio") ||
+    text.includes("ascvd")
+  );
+}
+
+function buildSystemPrompt(toolName?: string, toolTitle?: string) {
+  const base = `Você é um assistente clínico de suporte à estratificação de risco.
 
 ## Regras obrigatórias
 
@@ -58,6 +138,17 @@ function buildSystemPrompt() {
 Liste perguntas clínicas objetivas para completar o cálculo. Não use nomes de variáveis técnicas (e.g. \`peso_kg\`) — use linguagem clínica direta:
 - "Qual o peso atual do paciente em kg?"
 - "Qual o valor de pressão arterial sistólica?"`.trim();
+
+  const isImc = toolName === "imc" || toolName?.endsWith("__imc");
+  if (isImc) {
+    return `${base}\n\n${IMC_TOOL_GUIDANCE}`;
+  }
+
+  if (isPreventTool(toolName, toolTitle)) {
+    return `${base}\n\n${PREVENT_TOOL_GUIDANCE}`;
+  }
+
+  return base;
 }
 
 function buildUserMessage(toolName: string, toolTitle: string, soapText: string) {
@@ -112,7 +203,7 @@ export async function runSingleToolAgent(input: {
 
     const result = await agent.invoke({
       messages: [
-        new SystemMessage(buildSystemPrompt()),
+        new SystemMessage(buildSystemPrompt(exposedToolName, input.toolTitle)),
         new HumanMessage(buildUserMessage(exposedToolName, input.toolTitle, input.soapText)),
       ],
     });

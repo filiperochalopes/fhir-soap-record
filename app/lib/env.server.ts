@@ -15,6 +15,18 @@ const envSchema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   PORT: z.coerce.number().default(3000),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ENDPOINT: z.string().optional(),
+  S3_FORCE_PATH_STYLE: z.preprocess(
+    (value) =>
+      typeof value === "string"
+        ? value.trim().toLowerCase() === "true"
+        : value,
+    z.boolean().default(false),
+  ),
+  S3_REGION: z.string().default("us-east-1"),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

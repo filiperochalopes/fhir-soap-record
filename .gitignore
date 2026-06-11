@@ -9,9 +9,11 @@ coverage
 dist
 *.log
 docker-compose.override.yml
+compose.override.yml
 data/
 *.zip
 import/*
 !import/.keep
 !import/tools/
 !import/tools/**
+.playwright-mcp/

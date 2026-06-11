@@ -93,7 +93,7 @@ pnpm dev
 Use Docker Compose for a full local stack with MySQL and the Node monolith:
 
 ```bash
-docker compose up --build
+docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
 The `db` service creates the empty `fhir_soap_record` database, and the `app` service applies Prisma migrations automatically on startup.
@@ -104,7 +104,14 @@ To run the app against an external MySQL address instead of the bundled `db` ser
 
 ```bash
 export DATABASE_URL="mysql://user:password@host:3306/database"
-docker compose -f docker-compose.yml -f docker-compose.external.yml up --build app
+docker compose -f compose.yml -f compose.external.yml up --build app
+```
+
+To test S3-compatible attachment storage locally, enable the RustFS override first:
+
+```bash
+cp compose.override.yml.bak compose.override.yml
+docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
 If that external database already has the application tables and was not created by Prisma Migrate, baseline it once before the first deploy:

@@ -23,6 +23,8 @@ model Patient {
   telecom        ContactPoint[]
   identifier     Identifier[]
   appointments   Appointment[]
+  encounterDrafts EncounterDraft[]
+  clinicalAttachments ClinicalAttachment[]
   contacts       Contact[]
   soapNotes      SoapNote[]
   narrativeNotes NarrativeNote[]
@@ -99,6 +101,8 @@ model AuthUser {
   tokens         AuthToken[]
   soapNotes      SoapNote[]
   narrativeNotes NarrativeNote[]
+  encounterDrafts EncounterDraft[]
+  clinicalAttachments ClinicalAttachment[]
   auditLogs      AuditLog[]
 
   @@unique([crm, crmUf])
@@ -135,6 +139,7 @@ model SoapNote {
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  clinicalAttachments ClinicalAttachment[]
   patient     Patient      @relation(fields: [patientId], references: [id])
   author      AuthUser     @relation(fields: [authorUserId], references: [id])
 
@@ -156,8 +161,59 @@ model NarrativeNote {
 
   patient Patient  @relation(fields: [patientId], references: [id])
   author  AuthUser @relation(fields: [authorUserId], references: [id])
+  clinicalAttachments ClinicalAttachment[]
 
   @@unique([sourceSystem, sourceRecordId])
+}
+
+model EncounterDraft {
+  id            Int      @id @default(autoincrement())
+  patientId     Int      @map("patient_id")
+  authorUserId  Int      @map("author_user_id")
+  appointmentId Int?     @map("appointment_id")
+  draftKey      String   @map("draft_key")
+  noteType      String   @default("soap") @map("note_type")
+  status        String   @default("active")
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  author AuthUser @relation(fields: [authorUserId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+  clinicalAttachments ClinicalAttachment[]
+
+  @@unique([patientId, authorUserId, draftKey])
+  @@index([expiresAt])
+}
+
+model ClinicalAttachment {
+  id              Int      @id @default(autoincrement())
+  patientId       Int      @map("patient_id")
+  authorUserId    Int      @map("author_user_id")
+  draftId         Int?     @map("draft_id")
+  appointmentId   Int?     @map("appointment_id")
+  soapNoteId      Int?     @map("soap_note_id")
+  narrativeNoteId Int?     @map("narrative_note_id")
+  status          String   @default("draft")
+  fileName        String   @map("file_name")
+  contentType     String   @map("content_type")
+  byteSize        Int      @map("byte_size")
+  sha256          String
+  s3Bucket        String   @map("s3_bucket")
+  s3Key           String   @map("s3_key")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  author AuthUser @relation(fields: [authorUserId], references: [id])
+  draft EncounterDraft? @relation(fields: [draftId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+  soapNote SoapNote? @relation(fields: [soapNoteId], references: [id])
+  narrativeNote NarrativeNote? @relation(fields: [narrativeNoteId], references: [id])
+
+  @@index([draftId])
+  @@index([patientId, status])
+  @@index([soapNoteId])
+  @@index([narrativeNoteId])
 }
 
 model AuditLog {

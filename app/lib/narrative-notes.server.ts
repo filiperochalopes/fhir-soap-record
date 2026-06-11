@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
+import { promoteDraftAttachments } from "~/lib/attachments.server";
 import { normalizeNarrativeSections, serializeNarrativeSections, type NarrativeSection } from "~/lib/narrative-notes";
 import { prisma } from "~/lib/prisma.server";
 
@@ -8,6 +9,7 @@ type NarrativeClient = PrismaClient | Prisma.TransactionClient;
 
 type NarrativeCreateInput = {
   authorUserId: number;
+  attachmentDraftKey?: string | null;
   encounteredAt: Date;
   patientId: number;
   sections: NarrativeSection[];
@@ -19,6 +21,17 @@ type NarrativeCreateInput = {
 export async function createNarrativeNote(
   input: NarrativeCreateInput,
   db: NarrativeClient = prisma,
+) {
+  if (db === prisma) {
+    return prisma.$transaction((tx) => createNarrativeNoteInTransaction(input, tx));
+  }
+
+  return createNarrativeNoteInTransaction(input, db);
+}
+
+async function createNarrativeNoteInTransaction(
+  input: NarrativeCreateInput,
+  db: NarrativeClient,
 ) {
   const sections = serializeNarrativeSections(input.sections).filter((section) => section.text);
   if (!sections.length) {
@@ -61,6 +74,16 @@ export async function createNarrativeNote(
     entityType: "NarrativeNote",
     userId: input.authorUserId,
   });
+
+  await promoteDraftAttachments(
+    {
+      authorUserId: input.authorUserId,
+      draftKey: input.attachmentDraftKey,
+      narrativeNoteId: narrativeNote.id,
+      patientId: input.patientId,
+    },
+    db,
+  );
 
   return narrativeNote;
 }

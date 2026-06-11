@@ -511,6 +511,47 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
           },
         },
       },
+      "/fhir/DocumentReference": {
+        get: {
+          summary: "Search clinical attachments",
+          parameters: [
+            { in: "query", name: "patient", schema: { type: "string" } },
+          ],
+          responses: {
+            "200": {
+              description: "FHIR DocumentReference searchset",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/fhir/DocumentReference/{id}": {
+        get: {
+          summary: "Read clinical attachment metadata",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "FHIR DocumentReference resource",
+              content: {
+                "application/fhir+json": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+      },
       "/fhir": {
         post: {
           summary: "Import Bundle payloads",
