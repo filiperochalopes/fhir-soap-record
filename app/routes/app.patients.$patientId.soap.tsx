@@ -11,9 +11,9 @@ import {
 import { ZodError } from "zod";
 
 import { ClinicalHistory } from "~/components/clinical-history";
+import { AttachmentsCard } from "~/components/attachments/AttachmentsCard";
 import { ResizableSplit } from "~/components/soap/ResizableSplit";
 import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
-import { genericPlugins, soapPlugins } from "~/lib/soap-plugins/registry";
 import { requireUserSession } from "~/lib/auth.server";
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import {
@@ -22,6 +22,7 @@ import {
 } from "~/lib/narrative-notes.server";
 import { prisma } from "~/lib/prisma.server";
 import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
+import { soapPlugins } from "~/lib/soap-plugins/registry";
 import { createSoapNote, getPatientSoapNotes } from "~/lib/soap-notes.server";
 import { parseNarrativeForm } from "~/lib/validation/narrative";
 import { parseSoapForm } from "~/lib/validation/soap";
@@ -633,16 +634,12 @@ export default function SoapRoute() {
   const contextPanel = (
     <div className="space-y-4">
       <ClinicalHistory notes={previousNotes} timeZone={timeZone} />
-      {genericPlugins.map((plugin) => (
-        <plugin.Card
-          appointmentId={linkedAppointment?.id ?? null}
-          draftStorageKey={activeDraftStorageKey}
-          key={plugin.id}
-          noteType={noteType}
-          patientId={patient.id}
-          timeZone={timeZone}
-        />
-      ))}
+      <AttachmentsCard
+        appointmentId={linkedAppointment?.id ?? null}
+        draftStorageKey={activeDraftStorageKey}
+        noteType={noteType}
+        patientId={patient.id}
+      />
       {soapPlugins.map((plugin) => (
         <plugin.Card
           draftStorageKey={draftStorageKey}

@@ -11,14 +11,6 @@ export type SoapPluginCardProps = {
   timeZone: string;
 };
 
-export type GenericPluginCardProps = {
-  appointmentId: number | null;
-  draftStorageKey: string;
-  noteType: "narrative" | "soap";
-  patientId: number;
-  timeZone: string;
-};
-
 export abstract class Plugin<TProps> {
   id: string;
   label: string;
@@ -34,8 +26,6 @@ export abstract class Plugin<TProps> {
     this.Card = input.Card;
   }
 }
-
-export class GenericPlugin extends Plugin<GenericPluginCardProps> {}
 
 export class SoapPlugin extends Plugin<SoapPluginCardProps> {}
 

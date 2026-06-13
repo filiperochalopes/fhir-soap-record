@@ -26,6 +26,10 @@ export default [
     route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
     route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
     route("patients/:patientId/attachments", "routes/app.patients.$patientId.attachments.ts"),
+    route(
+      "patients/:patientId/attachments/:attachmentId/plugins/:pluginId",
+      "routes/app.patients.$patientId.attachments.$attachmentId.plugins.$pluginId.ts",
+    ),
     route("patients/:patientId/summary", "routes/app.patients.$patientId.summary.ts"),
     route("attachments/:attachmentId/download", "routes/app.attachments.$attachmentId.download.ts"),
     route(

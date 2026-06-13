@@ -1,16 +1,7 @@
 import { AiSummaryCard } from "~/components/soap-plugins/AiSummaryCard";
-import { AttachmentsCard } from "~/components/soap-plugins/AttachmentsCard";
 import { CalcMcpCard } from "~/components/soap-plugins/CalcMcpCard";
 
-import { GenericPlugin, SoapPlugin } from "./types";
-
-export const genericPlugins: GenericPlugin[] = [
-  new GenericPlugin({
-    id: "attachments",
-    label: "Anexos",
-    Card: AttachmentsCard,
-  }),
-];
+import { SoapPlugin } from "./types";
 
 export const soapPlugins: SoapPlugin[] = [
   new SoapPlugin({

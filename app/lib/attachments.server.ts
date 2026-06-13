@@ -10,8 +10,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { Prisma, PrismaClient } from "@prisma/client";
 
+import { listAvailableAttachmentPluginProcessors } from "~/lib/attachment-plugins/registry.server";
+import type {
+  AttachmentPluginExecutionSummary,
+  AttachmentPluginStatus,
+} from "~/lib/attachment-plugins/types";
 import { writeAuditLog } from "~/lib/audit.server";
 import { env } from "~/lib/env.server";
+import { hasPluginCredential } from "~/lib/plugin-credentials.server";
 import { prisma } from "~/lib/prisma.server";
 
 type AttachmentClient = PrismaClient | Prisma.TransactionClient;
@@ -97,6 +103,7 @@ export type AttachmentSummary = {
   createdAt: Date;
   downloadUrl: string;
   noteKind: "draft" | "soap" | "narrative" | "unknown";
+  pluginExecutions: AttachmentPluginExecutionSummary[];
 };
 
 function toSummary(attachment: {
@@ -106,6 +113,13 @@ function toSummary(attachment: {
   fileName: string;
   id: number;
   narrativeNoteId: number | null;
+  pluginExecutions?: Array<{
+    error: string | null;
+    externalJobId: string | null;
+    pluginId: string;
+    status: string;
+    summary: string | null;
+  }>;
   soapNoteId: number | null;
   status: string;
 }): AttachmentSummary {
@@ -124,6 +138,10 @@ function toSummary(attachment: {
           : attachment.narrativeNoteId
             ? "narrative"
             : "unknown",
+    pluginExecutions: (attachment.pluginExecutions ?? []).map((execution) => ({
+      ...execution,
+      status: execution.status as AttachmentPluginStatus,
+    })),
     status: attachment.status,
   };
 }
@@ -267,6 +285,7 @@ export async function listPatientAttachments(input: {
             draftId: draft.id,
             status: "draft",
           },
+          include: { pluginExecutions: true },
           orderBy: { createdAt: "desc" },
         })
       : Promise.resolve([]),
@@ -275,14 +294,28 @@ export async function listPatientAttachments(input: {
         patientId: input.patientId,
         status: "attached",
       },
+      include: { pluginExecutions: true },
       orderBy: { createdAt: "desc" },
       take: 25,
     }),
   ]);
 
+  const availableProcessors = listAvailableAttachmentPluginProcessors();
+  const configured = await Promise.all(
+    availableProcessors.map((processor) =>
+      hasPluginCredential(input.authorUserId, processor.id),
+    ),
+  );
+
   return {
     attached: attachedAttachments.map(toSummary),
     draft: draftAttachments.map(toSummary),
+    plugins: availableProcessors.map((processor, index) => ({
+      configured: configured[index],
+      id: processor.id,
+      label: processor.label,
+      supportedContentTypes: processor.supportedContentTypes,
+    })),
   };
 }
 

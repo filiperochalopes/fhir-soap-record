@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+const optionalUrl = z.preprocess(
+  (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+  z.string().url().optional(),
+);
+
+const optionalString = z.preprocess(
+  (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+  z.string().optional(),
+);
+
 const envSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
   COOKIE_NAME: z.string().default("clinic_token"),
@@ -27,6 +37,31 @@ const envSchema = z.object({
   ),
   S3_REGION: z.string().default("us-east-1"),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  MEUEXAME_API_BASE_URL: optionalUrl,
+  PLUGIN_SECRET_ENCRYPTION_KEY: optionalString,
+}).superRefine((value, context) => {
+  if (!value.MEUEXAME_API_BASE_URL) {
+    return;
+  }
+
+  if (!value.PLUGIN_SECRET_ENCRYPTION_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "PLUGIN_SECRET_ENCRYPTION_KEY is required when MEUEXAME_API_BASE_URL is configured.",
+      path: ["PLUGIN_SECRET_ENCRYPTION_KEY"],
+    });
+    return;
+  }
+
+  const key = Buffer.from(value.PLUGIN_SECRET_ENCRYPTION_KEY, "base64");
+  if (key.length !== 32) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "PLUGIN_SECRET_ENCRYPTION_KEY must be a base64-encoded 32-byte key.",
+      path: ["PLUGIN_SECRET_ENCRYPTION_KEY"],
+    });
+  }
 });
 
 export const env = envSchema.parse(process.env);

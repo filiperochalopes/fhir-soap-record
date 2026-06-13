@@ -5,7 +5,13 @@ import { ZodError } from "zod";
 import { ThemeToggle } from "~/components/theme-toggle";
 import { requireUserSession } from "~/lib/auth.server";
 import { getExportOverview } from "~/lib/export.server";
+import { env } from "~/lib/env.server";
 import { importFhirBundle } from "~/lib/import.server";
+import {
+  hasPluginCredential,
+  removePluginCredential,
+  setPluginCredential,
+} from "~/lib/plugin-credentials.server";
 import { prisma } from "~/lib/prisma.server";
 import {
   getBlurPatientPersonalData,
@@ -39,7 +45,9 @@ type SettingsActionData = {
   importedAt?: string;
   results?: ImportReportItem[];
   savedBlurPatientPersonalData?: boolean;
+  savedMeuExameCredential?: boolean;
   savedTimeZone?: string;
+  meuExameSettingsError?: string;
   settingsError?: string;
   totals?: {
     created: number;
@@ -52,16 +60,22 @@ type SettingsActionData = {
 };
 
 export async function loader({ request }: { request: Request }) {
-  await requireUserSession(request);
-  const [blurPatientPersonalData, overview, timeZone] = await Promise.all([
-    getBlurPatientPersonalData(),
-    getExportOverview(),
-    getUiTimeZone(),
-  ]);
+  const auth = await requireUserSession(request);
+  const [blurPatientPersonalData, meuExameConfigured, overview, timeZone] =
+    await Promise.all([
+      getBlurPatientPersonalData(),
+      hasPluginCredential(auth.user.id, "meuexame"),
+      getExportOverview(),
+      getUiTimeZone(),
+    ]);
 
   return {
     ...overview,
     blurPatientPersonalData,
+    meuExame: {
+      available: Boolean(env.MEUEXAME_API_BASE_URL),
+      configured: meuExameConfigured,
+    },
     timePreview: formatDateTime(new Date(), { timeZone }),
     timeZone,
     timeZoneOffset: formatTimeZoneOffsetLabel(timeZone),
@@ -76,6 +90,40 @@ export async function action({
   const auth = await requireUserSession(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "import");
+
+  if (intent === "save-meuexame-token") {
+    if (!env.MEUEXAME_API_BASE_URL) {
+      return { meuExameSettingsError: "Plugin MeuExame não está disponível." };
+    }
+    try {
+      await setPluginCredential({
+        pluginId: "meuexame",
+        secret: String(formData.get("token") ?? ""),
+        userId: auth.user.id,
+      });
+      return { savedMeuExameCredential: true };
+    } catch (error) {
+      return {
+        meuExameSettingsError:
+          error instanceof Error ? error.message : "Não foi possível salvar o token.",
+      };
+    }
+  }
+
+  if (intent === "remove-meuexame-token") {
+    try {
+      await removePluginCredential({
+        pluginId: "meuexame",
+        userId: auth.user.id,
+      });
+      return { savedMeuExameCredential: false };
+    } catch (error) {
+      return {
+        meuExameSettingsError:
+          error instanceof Error ? error.message : "Não foi possível remover o token.",
+      };
+    }
+  }
 
   if (intent === "save-timezone") {
     const rawTimeZone = String(formData.get("timeZone") ?? "").trim();
@@ -519,10 +567,97 @@ function PrivacySettings(props: { blurPatientPersonalData: boolean }) {
   );
 }
 
+function MeuExameSettings(props: {
+  available: boolean;
+  configured: boolean;
+}) {
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const intent = navigation.formData?.get("intent");
+  const isSubmitting =
+    navigation.state === "submitting" &&
+    ["save-meuexame-token", "remove-meuexame-token"].includes(String(intent));
+  const configured =
+    typeof actionData?.savedMeuExameCredential === "boolean"
+      ? actionData.savedMeuExameCredential
+      : props.configured;
+
+  if (!props.available) {
+    return null;
+  }
+
+  return (
+    <section className="panel space-y-5 p-6">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+          Attachment plugin
+        </p>
+        <h2 className="text-xl font-semibold tracking-tight">MeuExame</h2>
+        <p className="max-w-3xl text-sm text-[color:var(--muted)]">
+          Configure seu token pessoal para processar PDFs e imagens anexados. O token é
+          criptografado e não pode ser visualizado depois de salvo.
+        </p>
+      </div>
+
+      <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.03]">
+        Status:{" "}
+        <span className="font-semibold">
+          {configured ? "Token configurado" : "Token não configurado"}
+        </span>
+      </div>
+
+      <Form className="space-y-4" method="post">
+        <input name="intent" type="hidden" value="save-meuexame-token" />
+        <label className="block">
+          <span className="field-label">
+            {configured ? "Substituir token" : "Token da integração"}
+          </span>
+          <input
+            autoComplete="off"
+            name="token"
+            placeholder="mex_..."
+            required
+            type="password"
+          />
+        </label>
+        <button className="button-primary" disabled={isSubmitting} type="submit">
+          {isSubmitting ? "Salvando..." : configured ? "Substituir token" : "Salvar token"}
+        </button>
+      </Form>
+
+      {configured ? (
+        <Form method="post">
+          <input name="intent" type="hidden" value="remove-meuexame-token" />
+          <button
+            className="rounded-full border border-red-500/20 px-4 py-2 text-sm text-red-700 transition hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+            disabled={isSubmitting}
+            type="submit"
+          >
+            Remover token
+          </button>
+        </Form>
+      ) : null}
+
+      {actionData?.meuExameSettingsError ? (
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+          {actionData.meuExameSettingsError}
+        </p>
+      ) : null}
+
+      {typeof actionData?.savedMeuExameCredential === "boolean" ? (
+        <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
+          Configuração do MeuExame atualizada.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export default function SettingsRoute() {
   const {
     blurPatientPersonalData,
     counts,
+    meuExame,
     namespace,
     timePreview,
     timeZone,
@@ -554,6 +689,11 @@ export default function SettingsRoute() {
       />
 
       <PrivacySettings blurPatientPersonalData={blurPatientPersonalData} />
+
+      <MeuExameSettings
+        available={meuExame.available}
+        configured={meuExame.configured}
+      />
 
       <section className="panel space-y-5 p-6">
         <div className="space-y-2">

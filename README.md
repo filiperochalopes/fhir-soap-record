@@ -133,6 +133,11 @@ pnpm prisma:migrate:deploy
 - `PORT`: Node application port
 - `COOKIE_NAME`: auth cookie name for web login
 - `API_DRY_RUN`: when `true`, FHIR API writes are stored in process memory instead of Prisma; restarting the app/container clears the dry-run data
+- `MEUEXAME_API_BASE_URL`: base URL that enables the MeuExame attachment plugin
+- `PLUGIN_SECRET_ENCRYPTION_KEY`: base64-encoded 32-byte key used to encrypt per-user plugin tokens
+
+Each user configures their MeuExame token in `/settings`. The token needs
+`exams:write` and `exams:read`.
 
 ## Prisma Usage
 

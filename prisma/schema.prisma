@@ -103,6 +103,8 @@ model AuthUser {
   narrativeNotes NarrativeNote[]
   encounterDrafts EncounterDraft[]
   clinicalAttachments ClinicalAttachment[]
+  attachmentPluginExecutions AttachmentPluginExecution[]
+  pluginCredentials UserPluginCredential[]
   auditLogs      AuditLog[]
 
   @@unique([crm, crmUf])
@@ -209,11 +211,47 @@ model ClinicalAttachment {
   patient Patient @relation(fields: [patientId], references: [id])
   soapNote SoapNote? @relation(fields: [soapNoteId], references: [id])
   narrativeNote NarrativeNote? @relation(fields: [narrativeNoteId], references: [id])
+  pluginExecutions AttachmentPluginExecution[]
 
   @@index([draftId])
   @@index([patientId, status])
   @@index([soapNoteId])
   @@index([narrativeNoteId])
+}
+
+model AttachmentPluginExecution {
+  id                Int       @id @default(autoincrement())
+  attachmentId      Int       @map("attachment_id")
+  pluginId          String    @map("plugin_id")
+  requestedByUserId Int       @map("requested_by_user_id")
+  externalJobId     String?   @map("external_job_id")
+  status            String
+  summary           String?   @db.Text
+  result            Json?
+  error             String?   @db.Text
+  completedAt       DateTime? @map("completed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  attachment ClinicalAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  requestedBy AuthUser @relation(fields: [requestedByUserId], references: [id])
+
+  @@unique([attachmentId, pluginId])
+  @@index([pluginId, status])
+  @@index([requestedByUserId, status])
+}
+
+model UserPluginCredential {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  pluginId        String   @map("plugin_id")
+  encryptedSecret String   @map("encrypted_secret") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pluginId])
 }
 
 model AuditLog {
