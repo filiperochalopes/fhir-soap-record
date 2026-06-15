@@ -1,5 +1,5 @@
 services:
-  app:
+  fhir-soap-record:
     depends_on: []
     environment:
       API_DRY_RUN: ${API_DRY_RUN:-false}

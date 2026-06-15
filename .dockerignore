@@ -1,6 +1,18 @@
 node_modules
+dist
 build
 .git
 .env
 .react-router
+*.log
+*.gz
+*.zip
+__pycache__
+*.pyc
+.pnpm-store
+.playwright-mcp
+.claude
+data
+import/cache
+import/out
 

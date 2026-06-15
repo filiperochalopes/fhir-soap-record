@@ -1,5 +1,5 @@
 services:
-  db:
+  fhir-soap-record-db:
     image: mysql:8.4
     environment:
       MYSQL_DATABASE: ${DB_NAME:-fhir_soap_record}
@@ -14,17 +14,17 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
 
-  app:
+  fhir-soap-record:
     build:
       context: .
       target: deps
     depends_on:
-      db:
+      fhir-soap-record-db:
         condition: service_healthy
     command: sh ./scripts/dev-with-prisma.sh
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@db:3306/${DB_NAME:-fhir_soap_record}}
+      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}}
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:

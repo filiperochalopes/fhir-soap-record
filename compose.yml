@@ -1,7 +1,15 @@
 services:
-  db:
+  fhir-soap-record-db:
     image: mysql:8.4
+    container_name: fhir-soap-record-db
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - data
     environment:
       MYSQL_DATABASE: ${DB_NAME:-fhir_soap_record}
       MYSQL_ROOT_PASSWORD: ${DB_PASS:-clinic}
@@ -17,15 +25,32 @@ services:
     volumes:
       - ./data/db:/var/lib/mysql
 
-  app:
+  fhir-soap-record:
     build:
       context: .
+    container_name: fhir-soap-record
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - proxy
+      - internal
+      - data
     depends_on:
-      db:
+      fhir-soap-record-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
-      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@db:3306/${DB_NAME:-fhir_soap_record}}
-      APP_URL: http://localhost:3000
+      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}}
+      APP_URL: ${APP_URL:-http://localhost:3000}
       API_DRY_RUN: ${API_DRY_RUN:-false}
       COOKIE_NAME: clinic_token
       PORT: 3000
@@ -43,3 +68,11 @@ services:
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
     ports:
       - "${APP_PORT:-3000}:3000"
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: true
+  data:
+    external: true
