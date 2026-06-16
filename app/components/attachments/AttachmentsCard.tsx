@@ -81,7 +81,7 @@ function AttachmentRow(props: {
         )}
       </div>
 
-      {props.plugins.map((availablePlugin) => {
+      {(props.plugins ?? []).map((availablePlugin) => {
         if (
           !availablePlugin.supportedContentTypes.includes(
             props.attachment.contentType,
@@ -151,29 +151,38 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
   const responseData =
     uploadFetcher.data && !uploadFetcher.data.error
       ? uploadFetcher.data
-      : listFetcher.data;
-  const withOverrides = (attachment: AttachmentSummary) => ({
-    ...attachment,
-    pluginExecutions: attachment.pluginExecutions.map(
-      (execution) =>
-        executionOverrides[`${attachment.id}:${execution.pluginId}`] ?? execution,
-    ).concat(
-      Object.entries(executionOverrides)
-        .filter(
-          ([key, execution]) =>
-            key.startsWith(`${attachment.id}:`) &&
-            !attachment.pluginExecutions.some(
-              (current) => current.pluginId === execution.pluginId,
-            ),
+      : listFetcher.data && !listFetcher.data.error
+        ? listFetcher.data
+        : undefined;
+  const withOverrides = (attachment: AttachmentSummary) => {
+    const pluginExecutions = attachment.pluginExecutions ?? [];
+    return {
+      ...attachment,
+      pluginExecutions: pluginExecutions
+        .map(
+          (execution) =>
+            executionOverrides[`${attachment.id}:${execution.pluginId}`] ??
+            execution,
         )
-        .map(([, execution]) => execution),
-    ),
-  });
+        .concat(
+          Object.entries(executionOverrides)
+            .filter(
+              ([key, execution]) =>
+                key.startsWith(`${attachment.id}:`) &&
+                !pluginExecutions.some(
+                  (current) => current.pluginId === execution.pluginId,
+                ),
+            )
+            .map(([, execution]) => execution),
+        ),
+    };
+  };
   const data = responseData
     ? {
         ...responseData,
-        attached: responseData.attached.map(withOverrides),
-        draft: responseData.draft.map(withOverrides),
+        attached: (responseData.attached ?? []).map(withOverrides),
+        draft: (responseData.draft ?? []).map(withOverrides),
+        plugins: responseData.plugins ?? [],
       }
     : undefined;
   const error = uploadFetcher.data?.error ?? listFetcher.data?.error;

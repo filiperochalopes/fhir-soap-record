@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import { env } from "~/lib/env.server";
 import { prisma } from "~/lib/prisma.server";
+import { decodePluginSecretEncryptionKey } from "~/lib/plugin-secret-key.server";
 
 const CIPHER = "aes-256-gcm";
 const VERSION = "v1";
@@ -11,8 +12,8 @@ function encryptionKey() {
     throw new Error("Plugin secret encryption is not configured.");
   }
 
-  const key = Buffer.from(env.PLUGIN_SECRET_ENCRYPTION_KEY, "base64");
-  if (key.length !== 32) {
+  const key = decodePluginSecretEncryptionKey(env.PLUGIN_SECRET_ENCRYPTION_KEY);
+  if (!key) {
     throw new Error("Plugin secret encryption key is invalid.");
   }
   return key;

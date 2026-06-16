@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import { decodePluginSecretEncryptionKey } from "~/lib/plugin-secret-key.server";
+
+process.loadEnvFile?.();
+
 const optionalUrl = z.preprocess(
   (value) => (typeof value === "string" && !value.trim() ? undefined : value),
   z.string().url().optional(),
@@ -54,11 +58,11 @@ const envSchema = z.object({
     return;
   }
 
-  const key = Buffer.from(value.PLUGIN_SECRET_ENCRYPTION_KEY, "base64");
-  if (key.length !== 32) {
+  if (!decodePluginSecretEncryptionKey(value.PLUGIN_SECRET_ENCRYPTION_KEY)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "PLUGIN_SECRET_ENCRYPTION_KEY must be a base64-encoded 32-byte key.",
+      message:
+        "PLUGIN_SECRET_ENCRYPTION_KEY must be a base64-encoded 32-byte key or a 64-character hex key.",
       path: ["PLUGIN_SECRET_ENCRYPTION_KEY"],
     });
   }
