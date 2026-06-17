@@ -1,5 +1,6 @@
 import { Form, Link, NavLink, Outlet, useFetcher, useLoaderData } from "react-router";
 
+import { ToastProvider } from "~/components/toast";
 import { cn } from "~/lib/utils";
 
 type LoaderData = {
@@ -67,8 +68,9 @@ export function AppShell() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <div className="mx-auto min-h-screen max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <header className="panel mb-6 overflow-hidden">
+    <ToastProvider>
+      <div className="mx-auto min-h-screen max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <header className="panel mb-6 overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-black/5 px-6 py-5 dark:border-white/10 md:flex-row md:items-center md:justify-between">
           <div>
             <Link className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]" to="/patients">
@@ -153,11 +155,11 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-      <footer className="mt-10 border-t border-black/5 px-2 py-6 text-sm text-[color:var(--muted)] dark:border-white/10">
+        </header>
+        <main>
+          <Outlet />
+        </main>
+        <footer className="mt-10 border-t border-black/5 px-2 py-6 text-sm text-[color:var(--muted)] dark:border-white/10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p>
             Developed br{" "}
@@ -186,7 +188,8 @@ export function AppShell() {
             </a>
           </div>
         </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </ToastProvider>
   );
 }

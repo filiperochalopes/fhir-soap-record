@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { DebugJsonModal } from "~/components/soap-plugins/DebugJsonModal";
 import { PluginCard } from "~/components/soap-plugins/PluginCard";
 import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
+import { loadEncryptedDraft, migratePlainSessionDraft } from "~/lib/encrypted-draft-storage";
 import type { ToolCallResult } from "~/lib/ai/mcp.server";
 import type { CalcMcpTool } from "~/routes/app.patients.$patientId.soap-plugins.calc-mcp-tools";
 import type { SoapPluginCardProps } from "~/lib/soap-plugins/types";
@@ -24,20 +25,18 @@ type ToolsResponse = {
   tools: CalcMcpTool[];
 };
 
-function readDraft(storageKey: string) {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.sessionStorage.getItem(storageKey);
-    if (!raw) return null;
-    return JSON.parse(raw) as {
-      subjective?: string;
-      objective?: string;
-      assessment?: string;
-      plan?: string;
-    };
-  } catch {
-    return null;
-  }
+type SoapDraftSnapshot = Record<string, string> & {
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+};
+
+async function readDraft(storageKey: string) {
+  return (
+    (await loadEncryptedDraft<SoapDraftSnapshot>(storageKey)) ??
+    (await migratePlainSessionDraft<SoapDraftSnapshot>(storageKey))
+  );
 }
 
 // ── Play icon ────────────────────────────────────────────────────────────────
@@ -90,7 +89,7 @@ function ToolSubcard(props: {
   }, [hasResult]);
 
   async function handleRun() {
-    const draft = readDraft(props.draftStorageKey) ?? {};
+    const draft = (await readDraft(props.draftStorageKey)) ?? {};
     const formData = new FormData();
     formData.set("toolName", props.tool.name);
     formData.set("toolTitle", props.tool.title);

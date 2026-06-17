@@ -2,19 +2,28 @@ import { useEffect, useState } from "react";
 import {
   Form,
   Link,
+  isRouteErrorResponse,
   redirect,
   useActionData,
   useLoaderData,
   useNavigate,
+  useRouteError,
   useSearchParams,
 } from "react-router";
 import { ZodError } from "zod";
 
-import { ClinicalHistory } from "~/components/clinical-history";
+import { ClinicalHistory, type ClinicalHistoryItem } from "~/components/clinical-history";
 import { AttachmentsCard } from "~/components/attachments/AttachmentsCard";
 import { ResizableSplit } from "~/components/soap/ResizableSplit";
 import { SegmentedControl } from "~/components/soap-plugins/SegmentedControl";
+import { useToast } from "~/components/toast";
 import { requireUserSession } from "~/lib/auth.server";
+import {
+  clearEncryptedDraft,
+  loadEncryptedDraft,
+  migratePlainSessionDraft,
+  persistEncryptedDraft,
+} from "~/lib/encrypted-draft-storage";
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import {
   createNarrativeNote,
@@ -55,6 +64,8 @@ type LinkedAppointment = {
   status: string;
 };
 
+type PreviousNote = ClinicalHistoryItem;
+
 function parseOptionalPositiveInt(value: FormDataEntryValue | string | null) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -62,40 +73,6 @@ function parseOptionalPositiveInt(value: FormDataEntryValue | string | null) {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function loadDraft<T extends Record<string, string>>(storageKey: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const stored = window.sessionStorage.getItem(storageKey);
-  if (!stored) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(stored) as Partial<T>;
-  } catch {
-    window.sessionStorage.removeItem(storageKey);
-    return null;
-  }
-}
-
-function persistDraft(storageKey: string, value: Record<string, string>) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.sessionStorage.setItem(storageKey, JSON.stringify(value));
-}
-
-function clearDraft(storageKey: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.sessionStorage.removeItem(storageKey);
 }
 
 function useBeforeUnloadWarning(when: boolean) {
@@ -112,6 +89,16 @@ function useBeforeUnloadWarning(when: boolean) {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [when]);
+}
+
+function getErrorMessage(error: unknown) {
+  if (isRouteErrorResponse(error)) {
+    return error.status === 404
+      ? "Registro não encontrado."
+      : String(error.data || error.statusText || "A tela encontrou uma falha.");
+  }
+
+  return error instanceof Error ? error.message : "A tela encontrou uma falha.";
 }
 
 function SoapNoteForm(props: {
@@ -135,14 +122,28 @@ function SoapNoteForm(props: {
   const [formState, setFormState] = useState<SoapDraftState>(emptyState);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (props.resetDraft) {
-      clearDraft(storageKey);
+      clearEncryptedDraft(storageKey);
       setFormState(emptyState);
       return;
     }
 
-    const restored = loadDraft<SoapDraftState>(storageKey);
-    setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+    async function restoreDraft() {
+      const restored =
+        (await loadEncryptedDraft<SoapDraftState>(storageKey)) ??
+        (await migratePlainSessionDraft<SoapDraftState>(storageKey));
+
+      if (!cancelled) {
+        setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+      }
+    }
+
+    void restoreDraft();
+    return () => {
+      cancelled = true;
+    };
   }, [props.defaultEncounteredAt, props.resetDraft, storageKey]);
 
   const hasUnsavedChanges =
@@ -154,11 +155,11 @@ function SoapNoteForm(props: {
 
   useEffect(() => {
     if (hasUnsavedChanges) {
-      persistDraft(storageKey, formState);
+      void persistEncryptedDraft(storageKey, formState);
       return;
     }
 
-    clearDraft(storageKey);
+    clearEncryptedDraft(storageKey);
   }, [formState, hasUnsavedChanges, storageKey]);
 
   useBeforeUnloadWarning(hasUnsavedChanges);
@@ -278,14 +279,28 @@ function NarrativeNoteForm(props: {
   const [formState, setFormState] = useState<NarrativeDraftState>(emptyState);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (props.resetDraft) {
-      clearDraft(storageKey);
+      clearEncryptedDraft(storageKey);
       setFormState(emptyState);
       return;
     }
 
-    const restored = loadDraft<NarrativeDraftState>(storageKey);
-    setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+    async function restoreDraft() {
+      const restored =
+        (await loadEncryptedDraft<NarrativeDraftState>(storageKey)) ??
+        (await migratePlainSessionDraft<NarrativeDraftState>(storageKey));
+
+      if (!cancelled) {
+        setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+      }
+    }
+
+    void restoreDraft();
+    return () => {
+      cancelled = true;
+    };
   }, [props.defaultEncounteredAt, props.resetDraft, storageKey]);
 
   const hasUnsavedChanges =
@@ -295,11 +310,11 @@ function NarrativeNoteForm(props: {
 
   useEffect(() => {
     if (hasUnsavedChanges) {
-      persistDraft(storageKey, formState);
+      void persistEncryptedDraft(storageKey, formState);
       return;
     }
 
-    clearDraft(storageKey);
+    clearEncryptedDraft(storageKey);
   }, [formState, hasUnsavedChanges, storageKey]);
 
   useBeforeUnloadWarning(hasUnsavedChanges);
@@ -397,9 +412,8 @@ export async function loader({
     throw new Response("Patient not found", { status: 404 });
   }
 
-  const [previousSoapNotes, previousNarrativeNotes, linkedAppointment] = await Promise.all([
-    getPatientSoapNotes(patient.id),
-    getPatientNarrativeNotes(patient.id),
+  const [notesState, linkedAppointment] = await Promise.all([
+    loadRecoverableNotes(patient.id),
     appointmentId
       ? prisma.appointment.findFirst({
           where: {
@@ -417,39 +431,64 @@ export async function loader({
       : null,
   ]);
 
-  const previousNotes = [
-    ...previousSoapNotes.map((note) => ({
-      author: note.author,
-      encounteredAt: note.encounteredAt,
-      id: `soap-${note.id}`,
-      kind: "soap" as const,
-      sections: [
-        { text: note.subjective, title: "Subjective" },
-        { text: note.objective, title: "Objective" },
-        { text: note.assessment, title: "Assessment" },
-        { text: note.plan, title: "Plan" },
-      ],
-      title: "SOAP note",
-    })),
-    ...previousNarrativeNotes.map((note) => ({
-      author: note.author,
-      encounteredAt: note.encounteredAt,
-      id: `narrative-${note.id}`,
-      kind: "narrative" as const,
-      sections: normalizeNarrativeSections(note.sections),
-      title: note.title?.trim() || "Narrative note",
-    })),
-  ].sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
-
   return {
     blurPatientPersonalData: patientPersonalDataPrivacy.shouldBlur,
+    contextError: notesState.contextError,
     defaultEncounteredAt: toDateTimeLocalValue(linkedAppointment?.start ?? new Date(), timeZone),
     linkedAppointment,
     patient,
-    previousNotes,
-    soapNoteCount: previousSoapNotes.length,
+    previousNotes: notesState.previousNotes,
+    soapNoteCount: notesState.soapNoteCount,
     timeZone,
   };
+}
+
+async function loadRecoverableNotes(patientId: number) {
+  try {
+    const [previousSoapNotes, previousNarrativeNotes] = await Promise.all([
+      getPatientSoapNotes(patientId),
+      getPatientNarrativeNotes(patientId),
+    ]);
+
+    const previousNotes: PreviousNote[] = [
+      ...previousSoapNotes.map((note) => ({
+        author: note.author,
+        encounteredAt: note.encounteredAt,
+        id: `soap-${note.id}`,
+        kind: "soap" as const,
+        sections: [
+          { text: note.subjective, title: "Subjective" },
+          { text: note.objective, title: "Objective" },
+          { text: note.assessment, title: "Assessment" },
+          { text: note.plan, title: "Plan" },
+        ],
+        title: "SOAP note",
+      })),
+      ...previousNarrativeNotes.map((note) => ({
+        author: note.author,
+        encounteredAt: note.encounteredAt,
+        id: `narrative-${note.id}`,
+        kind: "narrative" as const,
+        sections: normalizeNarrativeSections(note.sections),
+        title: note.title?.trim() || "Narrative note",
+      })),
+    ].sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
+
+    return {
+      contextError: null as string | null,
+      previousNotes,
+      soapNoteCount: previousSoapNotes.length,
+    };
+  } catch (error) {
+    return {
+      contextError:
+        error instanceof Error
+          ? `Não foi possível carregar o histórico: ${error.message}`
+          : "Não foi possível carregar o histórico.",
+      previousNotes: [] as PreviousNote[],
+      soapNoteCount: 0,
+    };
+  }
 }
 
 export function shouldRevalidate({
@@ -557,6 +596,7 @@ export async function action({
 export default function SoapRoute() {
   const {
     blurPatientPersonalData,
+    contextError,
     defaultEncounteredAt,
     linkedAppointment,
     patient,
@@ -567,6 +607,7 @@ export default function SoapRoute() {
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { showToast } = useToast();
   const patientAge = formatPatientAge(patient.birthDate, { timeZone });
   const savedType = searchParams.get("saved");
   const sensitiveClassName = blurPatientPersonalData ? "privacy-blur" : undefined;
@@ -618,18 +659,32 @@ export default function SoapRoute() {
     const savedAppointmentId = parseOptionalPositiveInt(searchParams.get("appointmentId"));
 
     if (savedType === "soap") {
-      clearDraft(`patient:${patient.id}:draft:soap`);
+      clearEncryptedDraft(`patient:${patient.id}:draft:soap`);
       if (savedAppointmentId) {
-        clearDraft(`patient:${patient.id}:appointment:${savedAppointmentId}:draft:soap`);
+        clearEncryptedDraft(`patient:${patient.id}:appointment:${savedAppointmentId}:draft:soap`);
       }
     }
 
     if (savedType === "narrative") {
-      clearDraft(`patient:${patient.id}:draft:narrative`);
+      clearEncryptedDraft(`patient:${patient.id}:draft:narrative`);
     }
 
     navigate(`/patients/${patient.id}/soap`, { replace: true });
   }, [navigate, patient.id, savedType]);
+
+  useEffect(() => {
+    if (actionData?.error) {
+      showToast({
+        message: `Não foi possível salvar. Seu rascunho foi mantido. ${actionData.error}`,
+      });
+    }
+  }, [actionData?.error, showToast]);
+
+  useEffect(() => {
+    if (contextError) {
+      showToast({ message: contextError, tone: "warning" });
+    }
+  }, [contextError, showToast]);
 
   const contextPanel = (
     <div className="space-y-4">
@@ -655,11 +710,6 @@ export default function SoapRoute() {
 
   const editorPanel = patient.active ? (
     <div className="space-y-4">
-      {actionData?.error ? (
-        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
-          {actionData.error}
-        </p>
-      ) : null}
       {noteType === "soap" ? (
         <SoapNoteForm
           attachmentDraftKey={draftStorageKey}
@@ -797,6 +847,48 @@ export default function SoapRoute() {
         right={contextPanel}
         storageKey="soap:split"
       />
+    </div>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const { showToast } = useToast();
+  const message = getErrorMessage(error);
+
+  useEffect(() => {
+    showToast({
+      message: `A tela de registro encontrou uma falha, mas rascunhos digitados continuam salvos neste navegador. ${message}`,
+    });
+  }, [message, showToast]);
+
+  return (
+    <div className="relative left-1/2 w-screen max-w-[1536px] -translate-x-1/2 space-y-6 px-4 sm:px-6 lg:px-8">
+      <section className="panel space-y-4 p-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]">
+          Clinical registration
+        </p>
+        <h2 className="text-2xl font-semibold">Não foi possível renderizar esta tela.</h2>
+        <p className="max-w-3xl text-sm text-[color:var(--muted)]">
+          Os campos de atendimento são salvos continuamente em rascunho local
+          criptografado. Recarregue a página do paciente para restaurar o texto digitado.
+        </p>
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+          {message}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="button-primary"
+            type="button"
+            onClick={() => window.location.reload()}
+          >
+            Recarregar tela
+          </button>
+          <Link className="button-secondary" to="/patients">
+            Voltar para pacientes
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
