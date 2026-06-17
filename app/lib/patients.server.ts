@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient, type Patient } from "@prisma/client";
+import type { Patient, Prisma, PrismaClient } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
 import { prisma } from "~/lib/prisma.server";

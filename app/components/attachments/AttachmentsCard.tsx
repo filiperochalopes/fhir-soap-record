@@ -248,7 +248,7 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
         </label>
         <div className="flex items-center justify-between gap-3">
           <span className="truncate text-xs text-[color:var(--muted)]">
-            {selectedFile || "PDF, imagem ou texto até 20 MB"}
+            {selectedFile || "PDF, imagem ou texto até 100 MB"}
           </span>
           <button
             className="button-secondary"

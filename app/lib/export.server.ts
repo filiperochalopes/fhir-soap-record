@@ -1,11 +1,11 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import { normalizeNarrativeSections } from "~/lib/narrative-notes";
-import { prisma } from "~/lib/prisma.server";
+import { Prisma as PrismaRuntime, prisma } from "~/lib/prisma.server";
 import { getOrCreateInstanceExportNamespace } from "~/lib/settings.server";
 import { toFhirNarrativeDiv } from "~/lib/utils";
 
-const patientExportQuery = Prisma.validator<Prisma.PatientDefaultArgs>()({
+const patientExportQuery = PrismaRuntime.validator<Prisma.PatientDefaultArgs>()({
   include: {
     appointments: true,
     contacts: true,

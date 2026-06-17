@@ -1,5 +1,5 @@
 import { Form, Link, redirect, useLoaderData, useSubmit } from "react-router";
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import { requireUserSession } from "~/lib/auth.server";
 import { writeAuditLog } from "~/lib/audit.server";

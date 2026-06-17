@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 import { requireApiUser } from "~/lib/auth.server";
@@ -7,6 +6,7 @@ import { fhirJson } from "~/lib/fhir/capability";
 import { FHIR_APP_ERROR_CODES } from "~/lib/fhir/errors";
 import { getFhirStore } from "~/lib/fhir/store.server";
 import { applyFhirPatch, getResourceId } from "~/lib/fhir/write";
+import { Prisma as PrismaRuntime } from "~/lib/prisma.server";
 import { PATIENT_DUPLICATE_IDENTITY_MESSAGE } from "~/lib/patients.server";
 
 export async function loader({
@@ -92,7 +92,7 @@ export async function action({
       );
     }
 
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    if (error instanceof PrismaRuntime.PrismaClientKnownRequestError && error.code === "P2002") {
       return fhirJson(
         operationOutcome(
           "error",

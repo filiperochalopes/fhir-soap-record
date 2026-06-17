@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 type AuditClient = PrismaClient | Prisma.TransactionClient;
 
@@ -23,4 +23,3 @@ export async function writeAuditLog(db: AuditClient, input: AuditLogInput) {
     },
   });
 }
-

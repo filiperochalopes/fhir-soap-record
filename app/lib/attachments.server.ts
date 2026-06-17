@@ -8,7 +8,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { listAvailableAttachmentPluginProcessors } from "~/lib/attachment-plugins/registry.server";
 import type {
@@ -22,7 +22,7 @@ import { prisma } from "~/lib/prisma.server";
 
 type AttachmentClient = PrismaClient | Prisma.TransactionClient;
 
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
   "image/gif",
@@ -196,7 +196,7 @@ export async function uploadDraftAttachment(input: {
   }
 
   if (input.file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error("Arquivo excede o limite de 20 MB.");
+    throw new Error("Arquivo excede o limite de 100 MB.");
   }
 
   const contentType = input.file.type || "application/octet-stream";

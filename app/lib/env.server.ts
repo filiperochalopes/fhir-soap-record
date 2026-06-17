@@ -2,8 +2,6 @@ import { z } from "zod";
 
 import { decodePluginSecretEncryptionKey } from "~/lib/plugin-secret-key.server";
 
-process.loadEnvFile?.();
-
 const optionalUrl = z.preprocess(
   (value) => (typeof value === "string" && !value.trim() ? undefined : value),
   z.string().url().optional(),

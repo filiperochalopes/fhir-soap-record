@@ -1,8 +1,8 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import { getAttachmentForDownload } from "~/lib/attachments.server";
 import { getPluginCredential } from "~/lib/plugin-credentials.server";
-import { prisma } from "~/lib/prisma.server";
+import { Prisma as PrismaRuntime, prisma } from "~/lib/prisma.server";
 
 import { meuExameRequest } from "./client.server";
 
@@ -124,7 +124,7 @@ export async function startMeuExameExecution(input: {
       error: null,
       externalJobId: null,
       requestedByUserId: input.userId,
-      result: Prisma.DbNull,
+      result: PrismaRuntime.DbNull,
       status: "queued",
       summary: null,
     },

@@ -4,5 +4,10 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [reactRouter(), tsconfigPaths()],
+  build: {
+    rollupOptions: {
+      external: ["@prisma/client"],
+    },
+  },
 });
 
