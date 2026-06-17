@@ -23,9 +23,14 @@ export async function loader({
     throw new Response("Attachment not found", { status: 404 });
   }
 
+  const contentDisposition =
+    result.attachment.contentType === "application/pdf"
+      ? "inline"
+      : "attachment";
+
   return new Response(result.body, {
     headers: {
-      "Content-Disposition": `attachment; filename="${result.attachment.fileName.replaceAll('"', "'")}"`,
+      "Content-Disposition": `${contentDisposition}; filename="${result.attachment.fileName.replaceAll('"', "'")}"`,
       "Content-Length": String(result.attachment.byteSize),
       "Content-Type": result.attachment.contentType,
     },

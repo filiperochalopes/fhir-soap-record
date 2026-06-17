@@ -6,6 +6,7 @@ build
 .DS_Store
 .env
 .env.bak
+.codex/
 coverage
 dist
 *.log
@@ -13,6 +14,7 @@ docker-compose.override.yml
 compose.override.yml
 data/
 *.zip
+*.sql
 import/*
 !import/.keep
 !import/tools/
