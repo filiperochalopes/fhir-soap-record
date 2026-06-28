@@ -6,6 +6,7 @@ export default [
   route("logout", "routes/logout.tsx"),
   route("openapi.json", "routes/openapi.json.ts"),
   route("docs", "routes/docs.tsx"),
+  route("integrations/docs/webhook", "routes/integrations.docs.webhook.ts"),
   route("fhir", "routes/fhir.index.ts"),
   route("fhir/metadata", "routes/fhir.metadata.ts"),
   route("fhir/Patient", "routes/fhir.Patient.ts"),
@@ -25,6 +26,8 @@ export default [
     route("patients/new", "routes/app.patients.new.tsx"),
     route("patients/:patientId/edit", "routes/app.patients.$patientId.edit.tsx"),
     route("patients/:patientId/soap", "routes/app.patients.$patientId.soap.tsx"),
+    route("patients/:patientId/docs", "routes/app.patients.$patientId.docs.ts"),
+    route("patients/:patientId/docs/events", "routes/app.patients.$patientId.docs-events.ts"),
     route("patients/:patientId/attachments", "routes/app.patients.$patientId.attachments.ts"),
     route(
       "patients/:patientId/attachments/:attachmentId/plugins/:pluginId",

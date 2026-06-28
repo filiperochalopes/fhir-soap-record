@@ -39,10 +39,12 @@ const envSchema = z.object({
   ),
   S3_REGION: z.string().default("us-east-1"),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  DOCS_APP_BASE_URL: optionalUrl,
+  DOCS_WEBHOOK_BASE_URL: optionalUrl,
   MEUEXAME_API_BASE_URL: optionalUrl,
   PLUGIN_SECRET_ENCRYPTION_KEY: optionalString,
 }).superRefine((value, context) => {
-  if (!value.MEUEXAME_API_BASE_URL) {
+  if (!value.MEUEXAME_API_BASE_URL && !value.DOCS_APP_BASE_URL) {
     return;
   }
 
@@ -50,7 +52,7 @@ const envSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        "PLUGIN_SECRET_ENCRYPTION_KEY is required when MEUEXAME_API_BASE_URL is configured.",
+        "PLUGIN_SECRET_ENCRYPTION_KEY is required when plugin integrations are configured.",
       path: ["PLUGIN_SECRET_ENCRYPTION_KEY"],
     });
     return;

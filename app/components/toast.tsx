@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 
-type ToastTone = "error" | "warning";
+type ToastTone = "info" | "success" | "warning" | "error";
 
 type Toast = {
   id: number;
@@ -24,6 +24,14 @@ const ToastContext = createContext<ToastContextValue>({
 });
 
 function toneClassName(tone: ToastTone) {
+  if (tone === "info") {
+    return "border-sky-500/30 bg-sky-500/15 text-sky-950 dark:text-sky-50";
+  }
+
+  if (tone === "success") {
+    return "border-emerald-500/30 bg-emerald-500/15 text-emerald-950 dark:text-emerald-50";
+  }
+
   if (tone === "warning") {
     return "border-amber-500/30 bg-amber-500/15 text-amber-950 dark:text-amber-50";
   }

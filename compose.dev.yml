@@ -23,8 +23,7 @@ services:
         condition: service_healthy
     command: sh ./scripts/dev-with-prisma.sh
     # Load the full app config (S3, plugin key, MeuExame, etc.) so the dev-only
-    # invocation `docker compose -f compose.dev.yml up` is self-sufficient and
-    # does not depend on the external proxy/internal networks from compose.yml.
+    # invocation `docker compose -f compose.dev.yml up` is self-sufficient.
     env_file:
       - .env
     # The plugin (MeuExame) calls happen server-side from inside this container.
@@ -36,9 +35,14 @@ services:
     # header to the meuexame stack.
     extra_hosts:
       - "meuexame.localhost:192.168.65.254"
+    networks:
+      - default
+      - development
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}}
+      # In the dev stack the app runs in a container, so localhost is the app
+      # container itself. Always point Prisma at the bundled MySQL service.
+      DATABASE_URL: mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:
@@ -47,3 +51,8 @@ services:
 
 volumes:
   mysql_data:
+
+networks:
+  default:
+  development:
+    external: true

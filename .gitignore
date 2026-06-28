@@ -15,6 +15,7 @@ compose.override.yml
 data/
 *.zip
 *.sql
+!prisma/migrations/**/migration.sql
 import/*
 !import/.keep
 !import/tools/

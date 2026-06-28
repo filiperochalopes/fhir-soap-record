@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Form,
   Link,
@@ -30,6 +30,11 @@ import {
   getPatientNarrativeNotes,
 } from "~/lib/narrative-notes.server";
 import { prisma } from "~/lib/prisma.server";
+import {
+  getDocsAppOrigin,
+  getDocsIntegrationSettings,
+  listPendingDocsWebhookSuggestions,
+} from "~/lib/plugins/docs/integration.server";
 import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
 import { soapPlugins } from "~/lib/soap-plugins/registry";
 import { createSoapNote, getPatientSoapNotes } from "~/lib/soap-notes.server";
@@ -66,6 +71,19 @@ type LinkedAppointment = {
 
 type PreviousNote = ClinicalHistoryItem;
 
+type DocsIntegrationState = {
+  available: boolean;
+  configured: boolean;
+  medicalCertificateTemplateId: string;
+  origin: string | null;
+};
+
+type DocsSuggestion = {
+  documentType?: string;
+  id?: number;
+  text: string;
+};
+
 function parseOptionalPositiveInt(value: FormDataEntryValue | string | null) {
   if (typeof value !== "string" || !value.trim()) {
     return null;
@@ -101,10 +119,272 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "A tela encontrou uma falha.";
 }
 
+function readDocsSuggestionMessage(value: unknown): DocsSuggestion | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const data = value as Record<string, unknown>;
+  if (data.type !== "docs.clinical-note") {
+    return null;
+  }
+
+  const clinicalNote =
+    typeof data.clinicalNote === "string"
+      ? data.clinicalNote
+      : typeof data.text === "string"
+        ? data.text
+        : "";
+
+  const text = clinicalNote.trim();
+  if (!text) {
+    return null;
+  }
+
+  return {
+    documentType:
+      typeof data.documentType === "string" ? data.documentType : undefined,
+    text,
+  };
+}
+
+function DocsDocumentLauncher(props: {
+  docsIntegration: DocsIntegrationState;
+  patientBirthDate?: Date | string | null;
+  patientId: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
+  const launcherRef = useRef<HTMLDivElement>(null);
+
+  const configured = props.docsIntegration.available && props.docsIntegration.configured;
+  const enabled = configured && Boolean(props.patientBirthDate);
+  const options: Array<{
+    disabled?: boolean;
+    label: string;
+    numberShortcut: string;
+    shortcut: string;
+    shortcutLabel: string;
+    value: string;
+  }> = [
+    {
+      label: "Prescrição",
+      numberShortcut: "1",
+      shortcut: "p",
+      shortcutLabel: "P",
+      value: "prescription",
+    },
+    {
+      label: "Solicitação de exames",
+      numberShortcut: "2",
+      shortcut: "r",
+      shortcutLabel: "R",
+      value: "service-request",
+    },
+    {
+      disabled: !props.docsIntegration.medicalCertificateTemplateId,
+      label: "Atestado",
+      numberShortcut: "3",
+      shortcut: "a",
+      shortcutLabel: "A",
+      value: "medical-certificate",
+    },
+    {
+      label: "Documento genérico",
+      numberShortcut: "4",
+      shortcut: "d",
+      shortcutLabel: "D",
+      value: "generic-document",
+    },
+  ];
+
+  function openDocument(documentType: string) {
+    const targetName = `docs-${documentType}-${Date.now()}`;
+    window.open("about:blank", targetName);
+
+    const form = document.createElement("form");
+    form.action = `/patients/${props.patientId}/docs`;
+    form.method = "post";
+    form.target = targetName;
+    form.style.display = "none";
+
+    const input = document.createElement("input");
+    input.name = "documentType";
+    input.value = documentType;
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    setOpen(false);
+  }
+
+  function selectOption(option: (typeof options)[number]) {
+    if (!enabled || option.disabled) {
+      return;
+    }
+
+    openDocument(option.value);
+  }
+
+  function toggleOpen() {
+    if (!enabled) {
+      return;
+    }
+
+    const rect = launcherRef.current?.getBoundingClientRect();
+    if (rect) {
+      setDropUp(window.innerHeight - rect.bottom < 260);
+    }
+    setOpen((current) => !current);
+  }
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        launcherRef.current &&
+        !launcherRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+
+      const pressed = event.key.toLowerCase();
+      const option = options.find(
+        (item) => item.shortcut === pressed || item.numberShortcut === pressed,
+      );
+      if (option) {
+        event.preventDefault();
+        selectOption(option);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [enabled, open, options]);
+
+  if (!configured) {
+    return null;
+  }
+
+  return (
+    <div className="relative inline-block w-56" ref={launcherRef}>
+      <button
+        aria-expanded={open}
+        className={[
+          "inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold text-white shadow-sm transition",
+          enabled
+            ? "border-blue-500/30 bg-gradient-to-r from-blue-700 to-sky-600 hover:opacity-95"
+            : "cursor-not-allowed bg-slate-400 opacity-70 dark:bg-slate-700",
+        ].join(" ")}
+        disabled={!enabled}
+        onClick={toggleOpen}
+        title={
+          !props.patientBirthDate
+            ? "Informe a data de nascimento do paciente."
+            : "Gerar documento no Docs"
+        }
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          fill="none"
+          height="16"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width="16"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+          <path d="M8 13h8" />
+          <path d="M8 17h5" />
+        </svg>
+        Gerar documento
+        <svg
+          aria-hidden="true"
+          className={["transition-transform", open ? "rotate-180" : ""].join(" ")}
+          fill="none"
+          height="16"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          width="16"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          className={[
+            "absolute right-0 z-30 w-full overflow-hidden rounded-2xl border border-blue-500/20 bg-blue-950/80 p-1.5 text-white shadow-xl backdrop-blur-md dark:bg-blue-950/70",
+            dropUp ? "bottom-full mb-2" : "top-full mt-2",
+          ].join(" ")}
+        >
+          {options.map((option) => (
+            <button
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!enabled || option.disabled}
+              key={option.value}
+              onClick={() => selectOption(option)}
+              type="button"
+            >
+              <span>
+                {option.label === "Prescrição" ? (
+                  <>
+                    <span className="underline underline-offset-4">P</span>rescrição
+                  </>
+                ) : option.label === "Solicitação de exames" ? (
+                  <>
+                    Solicitação de exames <span className="underline underline-offset-4">R</span>
+                  </>
+                ) : option.label === "Atestado" ? (
+                  <>
+                    <span className="underline underline-offset-4">A</span>testado
+                  </>
+                ) : (
+                  <>
+                    <span className="underline underline-offset-4">D</span>ocumento genérico
+                  </>
+                )}
+              </span>
+              <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-xs">
+                {option.numberShortcut}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SoapNoteForm(props: {
   attachmentDraftKey: string;
   defaultEncounteredAt: string;
+  docsIntegration: DocsIntegrationState;
+  initialDocsSuggestions: DocsSuggestion[];
   linkedAppointment: LinkedAppointment | null;
+  patientBirthDate?: Date | string | null;
   patientId: number;
   resetDraft: boolean;
   timeZone: string;
@@ -120,6 +400,10 @@ function SoapNoteForm(props: {
     subjective: "",
   };
   const [formState, setFormState] = useState<SoapDraftState>(emptyState);
+  const [docsSuggestion, setDocsSuggestion] = useState<DocsSuggestion | null>(
+    props.initialDocsSuggestions[0] ?? null,
+  );
+  const { showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +448,110 @@ function SoapNoteForm(props: {
 
   useBeforeUnloadWarning(hasUnsavedChanges);
 
+  useEffect(() => {
+    if (!docsSuggestion && props.initialDocsSuggestions[0]) {
+      setDocsSuggestion(props.initialDocsSuggestions[0]);
+    }
+  }, [docsSuggestion, props.initialDocsSuggestions]);
+
+  useEffect(() => {
+    if (!props.docsIntegration.origin) {
+      return;
+    }
+
+    function handleMessage(event: MessageEvent) {
+      if (event.origin !== props.docsIntegration.origin) {
+        return;
+      }
+
+      const suggestion = readDocsSuggestionMessage(event.data);
+      if (!suggestion) {
+        return;
+      }
+
+      setDocsSuggestion(suggestion);
+      showToast({
+        message: "O Docs retornou uma sugestão de conduta para inserir no SOAP.",
+      });
+    }
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [props.docsIntegration.origin, showToast]);
+
+  useEffect(() => {
+    if (!props.docsIntegration.configured) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshWebhookSuggestions() {
+      try {
+        const response = await fetch(`/patients/${props.patientId}/docs/events`);
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          suggestions?: DocsSuggestion[];
+        };
+        const suggestion = payload.suggestions?.[0];
+        if (!suggestion || cancelled) {
+          return;
+        }
+
+        setDocsSuggestion((current) => {
+          if (current?.id && current.id === suggestion.id) {
+            return current;
+          }
+
+          showToast({
+            message: "O Docs enviou uma conduta pelo webhook.",
+            tone: "info",
+          });
+          return suggestion;
+        });
+      } catch {
+        // Polling errors should not interrupt clinical note editing.
+      }
+    }
+
+    const interval = window.setInterval(refreshWebhookSuggestions, 5000);
+    void refreshWebhookSuggestions();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [props.docsIntegration.configured, props.patientId, showToast]);
+
+  function consumeSuggestion(suggestion: DocsSuggestion) {
+    if (!suggestion.id) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("eventId", String(suggestion.id));
+    void fetch(`/patients/${props.patientId}/docs/events`, {
+      body: formData,
+      method: "POST",
+    });
+  }
+
+  function insertDocsSuggestion() {
+    if (!docsSuggestion) {
+      return;
+    }
+
+    setFormState((current) => ({
+      ...current,
+      plan: [current.plan.trim(), docsSuggestion.text].filter(Boolean).join("\n\n"),
+    }));
+    consumeSuggestion(docsSuggestion);
+    setDocsSuggestion(null);
+  }
+
   return (
     <section className="panel p-6">
       <div>
@@ -171,6 +559,8 @@ function SoapNoteForm(props: {
         <p className="mt-2 text-sm text-[color:var(--muted)]">
           Structured clinical registration with subjective, objective, assessment, and plan.
         </p>
+      </div>
+      <div>
         {props.linkedAppointment ? (
           <p className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm">
             Appointment at {formatDateTime(props.linkedAppointment.start, {
@@ -254,7 +644,44 @@ function SoapNoteForm(props: {
             }}
           />
         </label>
-        <div className="flex justify-end">
+        {docsSuggestion ? (
+          <div className="space-y-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">Sugestão do Docs para conduta</p>
+                <p className="text-xs text-[color:var(--muted)]">
+                  Revise antes de inserir no campo Plan.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="button-tonal-emerald"
+                  onClick={insertDocsSuggestion}
+                  type="button"
+                >
+                  Inserir na conduta
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => {
+                    consumeSuggestion(docsSuggestion);
+                    setDocsSuggestion(null);
+                  }}
+                  type="button"
+                >
+                  Descartar
+                </button>
+              </div>
+            </div>
+            <textarea readOnly value={docsSuggestion.text} />
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <DocsDocumentLauncher
+            docsIntegration={props.docsIntegration}
+            patientBirthDate={props.patientBirthDate}
+            patientId={props.patientId}
+          />
           <button className="button-primary" type="submit">
             Save SOAP note
           </button>
@@ -384,13 +811,24 @@ export async function loader({
   params: { patientId?: string };
   request: Request;
 }) {
-  await requireUserSession(request);
+  const auth = await requireUserSession(request);
 
   const patientId = Number(params.patientId);
   const url = new URL(request.url);
   const appointmentId = parseOptionalPositiveInt(url.searchParams.get("appointmentId"));
-  const [patientPersonalDataPrivacy, patient, timeZone] = await Promise.all([
+  const [
+    patientPersonalDataPrivacy,
+    docsIntegration,
+    docsWebhookSuggestions,
+    patient,
+    timeZone,
+  ] = await Promise.all([
     getPatientPersonalDataPrivacy(request),
+    getDocsIntegrationSettings(auth.user.id),
+    listPendingDocsWebhookSuggestions({
+      patientId,
+      userId: auth.user.id,
+    }),
     prisma.patient.findUnique({
       where: { id: patientId },
       include: {
@@ -435,6 +873,11 @@ export async function loader({
     blurPatientPersonalData: patientPersonalDataPrivacy.shouldBlur,
     contextError: notesState.contextError,
     defaultEncounteredAt: toDateTimeLocalValue(linkedAppointment?.start ?? new Date(), timeZone),
+    docsIntegration: {
+      ...docsIntegration,
+      origin: getDocsAppOrigin(),
+    },
+    docsWebhookSuggestions,
     linkedAppointment,
     patient,
     previousNotes: notesState.previousNotes,
@@ -499,6 +942,10 @@ export function shouldRevalidate({
   formAction?: string;
 }) {
   if (formAction?.includes("/soap-plugins/")) {
+    return false;
+  }
+
+  if (formAction?.includes("/docs")) {
     return false;
   }
 
@@ -598,6 +1045,8 @@ export default function SoapRoute() {
     blurPatientPersonalData,
     contextError,
     defaultEncounteredAt,
+    docsIntegration,
+    docsWebhookSuggestions,
     linkedAppointment,
     patient,
     previousNotes,
@@ -714,7 +1163,10 @@ export default function SoapRoute() {
         <SoapNoteForm
           attachmentDraftKey={draftStorageKey}
           defaultEncounteredAt={defaultEncounteredAt}
+          docsIntegration={docsIntegration}
+          initialDocsSuggestions={docsWebhookSuggestions}
           linkedAppointment={linkedAppointment}
+          patientBirthDate={patient.birthDate}
           patientId={patient.id}
           resetDraft={savedType === "soap"}
           timeZone={timeZone}

@@ -28,6 +28,7 @@ model Patient {
   contacts       Contact[]
   soapNotes      SoapNote[]
   narrativeNotes NarrativeNote[]
+  clinicalDocumentWebhookEvents ClinicalDocumentWebhookEvent[]
 }
 
 model Contact {
@@ -104,6 +105,7 @@ model AuthUser {
   encounterDrafts EncounterDraft[]
   clinicalAttachments ClinicalAttachment[]
   attachmentPluginExecutions AttachmentPluginExecution[]
+  clinicalDocumentWebhookEvents ClinicalDocumentWebhookEvent[]
   pluginCredentials UserPluginCredential[]
   auditLogs      AuditLog[]
 
@@ -252,6 +254,25 @@ model UserPluginCredential {
   user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, pluginId])
+}
+
+model ClinicalDocumentWebhookEvent {
+  id           Int       @id @default(autoincrement())
+  patientId    Int       @map("patient_id")
+  authorUserId Int       @map("author_user_id")
+  state        String
+  documentType String    @map("document_type")
+  clinicalNote String    @map("clinical_note") @db.Text
+  payload      Json?
+  consumedAt   DateTime? @map("consumed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  patient Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  author  AuthUser @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@unique([state])
+  @@index([patientId, authorUserId, consumedAt], map: "cdwe_patient_author_consumed_idx")
 }
 
 model AuditLog {

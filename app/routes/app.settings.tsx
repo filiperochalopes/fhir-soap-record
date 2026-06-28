@@ -12,6 +12,11 @@ import {
   removePluginCredential,
   setPluginCredential,
 } from "~/lib/plugin-credentials.server";
+import {
+  getDocsIntegrationSettings,
+  removeDocsIntegrationSettings,
+  setDocsIntegrationSettings,
+} from "~/lib/plugins/docs/integration.server";
 import { prisma } from "~/lib/prisma.server";
 import {
   getBlurPatientPersonalData,
@@ -27,6 +32,39 @@ import {
   isValidTimeZone,
 } from "~/lib/utils";
 import { bundleSchema } from "~/lib/validation/import";
+
+function ConfirmModal(props: {
+  description: string;
+  isOpen: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  title: string;
+}) {
+  if (!props.isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="panel w-full max-w-sm space-y-5 p-6">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold">{props.title}</h3>
+          <p className="text-sm text-[color:var(--muted)]">{props.description}</p>
+        </div>
+        <div className="flex justify-end gap-3">
+          <button className="button-secondary" onClick={props.onCancel} type="button">
+            Cancel
+          </button>
+          <button
+            className="rounded-full border border-red-500/20 px-4 py-2 text-sm text-red-700 transition hover:bg-red-500/10 dark:text-red-300"
+            onClick={props.onConfirm}
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type ImportReportItem = {
   error?: string;
@@ -44,6 +82,8 @@ type SettingsActionData = {
   error?: string;
   importedAt?: string;
   results?: ImportReportItem[];
+  docsSettingsError?: string;
+  savedDocsSettings?: boolean;
   savedBlurPatientPersonalData?: boolean;
   savedMeuExameCredential?: boolean;
   savedTimeZone?: string;
@@ -61,9 +101,10 @@ type SettingsActionData = {
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireUserSession(request);
-  const [blurPatientPersonalData, meuExameConfigured, overview, timeZone] =
+  const [blurPatientPersonalData, docsIntegration, meuExameConfigured, overview, timeZone] =
     await Promise.all([
       getBlurPatientPersonalData(),
+      getDocsIntegrationSettings(auth.user.id),
       hasPluginCredential(auth.user.id, "meuexame"),
       getExportOverview(),
       getUiTimeZone(),
@@ -72,6 +113,7 @@ export async function loader({ request }: { request: Request }) {
   return {
     ...overview,
     blurPatientPersonalData,
+    docsIntegration,
     meuExame: {
       available: Boolean(env.MEUEXAME_API_BASE_URL),
       configured: meuExameConfigured,
@@ -93,7 +135,7 @@ export async function action({
 
   if (intent === "save-meuexame-token") {
     if (!env.MEUEXAME_API_BASE_URL) {
-      return { meuExameSettingsError: "Plugin MeuExame não está disponível." };
+      return { meuExameSettingsError: "MeuExame plugin is not available." };
     }
     try {
       await setPluginCredential({
@@ -105,7 +147,7 @@ export async function action({
     } catch (error) {
       return {
         meuExameSettingsError:
-          error instanceof Error ? error.message : "Não foi possível salvar o token.",
+          error instanceof Error ? error.message : "Could not save the token.",
       };
     }
   }
@@ -120,7 +162,37 @@ export async function action({
     } catch (error) {
       return {
         meuExameSettingsError:
-          error instanceof Error ? error.message : "Não foi possível remover o token.",
+          error instanceof Error ? error.message : "Could not remove the token.",
+      };
+    }
+  }
+
+  if (intent === "save-docs-settings") {
+    try {
+      await setDocsIntegrationSettings({
+        apiKey: String(formData.get("apiKey") ?? ""),
+        medicalCertificateTemplateId: String(
+          formData.get("medicalCertificateTemplateId") ?? "",
+        ),
+        userId: auth.user.id,
+      });
+      return { savedDocsSettings: true };
+    } catch (error) {
+      return {
+        docsSettingsError:
+          error instanceof Error ? error.message : "Could not save Docs settings.",
+      };
+    }
+  }
+
+  if (intent === "remove-docs-settings") {
+    try {
+      await removeDocsIntegrationSettings(auth.user.id);
+      return { savedDocsSettings: false };
+    } catch (error) {
+      return {
+        docsSettingsError:
+          error instanceof Error ? error.message : "Could not remove Docs settings.",
       };
     }
   }
@@ -490,7 +562,7 @@ function TimeZoneSettings(props: {
           />
         </label>
         <p className="text-sm text-[color:var(--muted)]">
-          Default recomendado: <span className="font-mono">America/Bahia</span>
+          Recommended default: <span className="font-mono">America/Bahia</span>
         </p>
 
         {actionData?.settingsError ? (
@@ -543,10 +615,9 @@ function PrivacySettings(props: { blurPatientPersonalData: boolean }) {
             type="checkbox"
           />
           <span>
-            <span className="block text-sm font-semibold">Ocultar dados pessoais do paciente</span>
+            <span className="block text-sm font-semibold">Hide patient personal data</span>
             <span className="mt-1 block text-sm text-[color:var(--muted)]">
-              Aplica blur em nome, data de nascimento e CPF/identificador sem alterar os dados
-              salvos.
+              Blurs name, date of birth, and CPF/identifier without altering saved data.
             </span>
           </span>
         </label>
@@ -581,28 +652,37 @@ function MeuExameSettings(props: {
     typeof actionData?.savedMeuExameCredential === "boolean"
       ? actionData.savedMeuExameCredential
       : props.configured;
-
-  if (!props.available) {
-    return null;
-  }
+  const removeFormRef = useRef<HTMLFormElement>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   return (
     <section className="panel space-y-5 p-6">
+      <ConfirmModal
+        description="This will permanently remove your MeuExame token. You will need to re-enter it to use the plugin again."
+        isOpen={showRemoveConfirm}
+        onCancel={() => setShowRemoveConfirm(false)}
+        onConfirm={() => {
+          setShowRemoveConfirm(false);
+          removeFormRef.current?.requestSubmit();
+        }}
+        title="Remove MeuExame token?"
+      />
+
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
           Attachment plugin
         </p>
         <h2 className="text-xl font-semibold tracking-tight">MeuExame</h2>
         <p className="max-w-3xl text-sm text-[color:var(--muted)]">
-          Configure seu token pessoal para processar PDFs e imagens anexados. O token é
-          criptografado e não pode ser visualizado depois de salvo.
+          Set your personal token to process attached PDFs and images. The token is encrypted and
+          cannot be viewed after saving.
         </p>
       </div>
 
       <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.03]">
         Status:{" "}
         <span className="font-semibold">
-          {configured ? "Token configurado" : "Token não configurado"}
+          {configured ? "Token configured" : "Token not configured"}
         </span>
       </div>
 
@@ -610,7 +690,7 @@ function MeuExameSettings(props: {
         <input name="intent" type="hidden" value="save-meuexame-token" />
         <label className="block">
           <span className="field-label">
-            {configured ? "Substituir token" : "Token da integração"}
+            {configured ? "Replace token" : "Integration token"}
           </span>
           <input
             autoComplete="off"
@@ -620,23 +700,26 @@ function MeuExameSettings(props: {
             type="password"
           />
         </label>
-        <button className="button-primary" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Salvando..." : configured ? "Substituir token" : "Salvar token"}
-        </button>
+        <div className="flex items-center gap-3">
+          {configured ? (
+            <button
+              className="rounded-full border border-red-500/20 px-4 py-2 text-sm text-red-700 transition hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+              disabled={isSubmitting}
+              onClick={() => setShowRemoveConfirm(true)}
+              type="button"
+            >
+              Remove token
+            </button>
+          ) : null}
+          <button className="button-primary ml-auto" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Saving..." : configured ? "Replace token" : "Save token"}
+          </button>
+        </div>
       </Form>
 
-      {configured ? (
-        <Form method="post">
-          <input name="intent" type="hidden" value="remove-meuexame-token" />
-          <button
-            className="rounded-full border border-red-500/20 px-4 py-2 text-sm text-red-700 transition hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
-            disabled={isSubmitting}
-            type="submit"
-          >
-            Remover token
-          </button>
-        </Form>
-      ) : null}
+      <Form method="post" ref={removeFormRef}>
+        <input name="intent" type="hidden" value="remove-meuexame-token" />
+      </Form>
 
       {actionData?.meuExameSettingsError ? (
         <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
@@ -646,7 +729,127 @@ function MeuExameSettings(props: {
 
       {typeof actionData?.savedMeuExameCredential === "boolean" ? (
         <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
-          Configuração do MeuExame atualizada.
+          MeuExame settings updated.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function DocsIntegrationSettings(props: {
+  available: boolean;
+  configured: boolean;
+  medicalCertificateTemplateId: string;
+}) {
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const intent = navigation.formData?.get("intent");
+  const isSubmitting =
+    navigation.state === "submitting" &&
+    ["save-docs-settings", "remove-docs-settings"].includes(String(intent));
+  const configured =
+    typeof actionData?.savedDocsSettings === "boolean"
+      ? actionData.savedDocsSettings
+      : props.configured;
+  const removeFormRef = useRef<HTMLFormElement>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+
+  if (!props.available) {
+    return null;
+  }
+
+  return (
+    <section className="panel space-y-5 p-6">
+      <ConfirmModal
+        description="This will permanently remove the Docs API key. The integration will stop working until you set a new key."
+        isOpen={showRemoveConfirm}
+        onCancel={() => setShowRemoveConfirm(false)}
+        onConfirm={() => {
+          setShowRemoveConfirm(false);
+          removeFormRef.current?.requestSubmit();
+        }}
+        title="Remove Docs API key?"
+      />
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[color:var(--muted)]">
+          Document integration
+        </p>
+        <h2 className="text-xl font-semibold tracking-tight">Docs</h2>
+        <p className="max-w-3xl text-sm text-[color:var(--muted)]">
+          Configure the API key used to encrypt parameters sent to Docs. The key is encrypted on
+          the server and cannot be viewed after saving.
+        </p>
+      </div>
+
+      <div className="rounded-3xl border border-black/5 bg-black/[0.03] p-4 text-sm dark:border-white/10 dark:bg-white/[0.03]">
+        <div>
+          Status:{" "}
+          <span className="font-semibold">
+            {configured ? "API key configured" : "API key not configured"}
+          </span>
+        </div>
+        {!props.available ? (
+          <p className="mt-2 text-[color:var(--muted)]">
+            Set <code>DOCS_APP_BASE_URL</code> in the environment to enable the generation button
+            in SOAP.
+          </p>
+        ) : null}
+      </div>
+
+      <Form className="space-y-4" method="post">
+        <input name="intent" type="hidden" value="save-docs-settings" />
+        <label className="block">
+          <span className="field-label">
+            {configured ? "Replace API key" : "Docs API key"}
+          </span>
+          <input
+            autoComplete="off"
+            name="apiKey"
+            placeholder={configured ? "Leave blank to keep the current key" : "docs_..."}
+            required={!configured}
+            type="password"
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Medical certificate template ID</span>
+          <input
+            autoComplete="off"
+            defaultValue={props.medicalCertificateTemplateId}
+            name="medicalCertificateTemplateId"
+            placeholder="Paste the Docs template ID here"
+          />
+        </label>
+        <div className="flex items-center gap-3">
+          {configured ? (
+            <button
+              className="rounded-full border border-red-500/20 px-4 py-2 text-sm text-red-700 transition hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+              disabled={isSubmitting}
+              onClick={() => setShowRemoveConfirm(true)}
+              type="button"
+            >
+              Remove API key
+            </button>
+          ) : null}
+          <button className="button-primary ml-auto" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Saving..." : "Save Docs"}
+          </button>
+        </div>
+      </Form>
+
+      <Form method="post" ref={removeFormRef}>
+        <input name="intent" type="hidden" value="remove-docs-settings" />
+      </Form>
+
+      {actionData?.docsSettingsError ? (
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+          {actionData.docsSettingsError}
+        </p>
+      ) : null}
+
+      {typeof actionData?.savedDocsSettings === "boolean" ? (
+        <p className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm">
+          Docs settings updated.
         </p>
       ) : null}
     </section>
@@ -657,6 +860,7 @@ export default function SettingsRoute() {
   const {
     blurPatientPersonalData,
     counts,
+    docsIntegration,
     meuExame,
     namespace,
     timePreview,
@@ -689,6 +893,12 @@ export default function SettingsRoute() {
       />
 
       <PrivacySettings blurPatientPersonalData={blurPatientPersonalData} />
+
+      <DocsIntegrationSettings
+        available={docsIntegration.available}
+        configured={docsIntegration.configured}
+        medicalCertificateTemplateId={docsIntegration.medicalCertificateTemplateId}
+      />
 
       <MeuExameSettings
         available={meuExame.available}
