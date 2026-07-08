@@ -400,6 +400,8 @@ function SoapNoteForm(props: {
     subjective: "",
   };
   const [formState, setFormState] = useState<SoapDraftState>(emptyState);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftHadContentRef = useRef(false);
   const [docsSuggestion, setDocsSuggestion] = useState<DocsSuggestion | null>(
     props.initialDocsSuggestions[0] ?? null,
   );
@@ -407,10 +409,13 @@ function SoapNoteForm(props: {
 
   useEffect(() => {
     let cancelled = false;
+    setDraftRestored(false);
+    draftHadContentRef.current = false;
 
     if (props.resetDraft) {
       clearEncryptedDraft(storageKey);
       setFormState(emptyState);
+      setDraftRestored(true);
       return;
     }
 
@@ -421,6 +426,7 @@ function SoapNoteForm(props: {
 
       if (!cancelled) {
         setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+        setDraftRestored(true);
       }
     }
 
@@ -428,7 +434,7 @@ function SoapNoteForm(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.defaultEncounteredAt, props.resetDraft, storageKey]);
+  }, [props.resetDraft, storageKey]);
 
   const hasUnsavedChanges =
     formState.assessment.trim().length > 0 ||
@@ -437,14 +443,25 @@ function SoapNoteForm(props: {
     formState.plan.trim().length > 0 ||
     formState.subjective.trim().length > 0;
 
+  // Persist only after the async restore settles, and clear only when the
+  // user actively emptied fields that had content. Clearing on the initial
+  // empty state would delete the stored draft before it could be restored.
   useEffect(() => {
+    if (!draftRestored) {
+      return;
+    }
+
     if (hasUnsavedChanges) {
+      draftHadContentRef.current = true;
       void persistEncryptedDraft(storageKey, formState);
       return;
     }
 
-    clearEncryptedDraft(storageKey);
-  }, [formState, hasUnsavedChanges, storageKey]);
+    if (draftHadContentRef.current) {
+      draftHadContentRef.current = false;
+      clearEncryptedDraft(storageKey);
+    }
+  }, [draftRestored, formState, hasUnsavedChanges, storageKey]);
 
   useBeforeUnloadWarning(hasUnsavedChanges);
 
@@ -536,6 +553,8 @@ function SoapNoteForm(props: {
     void fetch(`/patients/${props.patientId}/docs/events`, {
       body: formData,
       method: "POST",
+    }).catch(() => {
+      // Falha de rede ao consumir a sugestão não pode interromper a edição.
     });
   }
 
@@ -704,13 +723,18 @@ function NarrativeNoteForm(props: {
     title: "",
   };
   const [formState, setFormState] = useState<NarrativeDraftState>(emptyState);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftHadContentRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    setDraftRestored(false);
+    draftHadContentRef.current = false;
 
     if (props.resetDraft) {
       clearEncryptedDraft(storageKey);
       setFormState(emptyState);
+      setDraftRestored(true);
       return;
     }
 
@@ -721,6 +745,7 @@ function NarrativeNoteForm(props: {
 
       if (!cancelled) {
         setFormState(restored ? { ...emptyState, ...restored } : emptyState);
+        setDraftRestored(true);
       }
     }
 
@@ -728,21 +753,32 @@ function NarrativeNoteForm(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.defaultEncounteredAt, props.resetDraft, storageKey]);
+  }, [props.resetDraft, storageKey]);
 
   const hasUnsavedChanges =
     formState.body.trim().length > 0 ||
     formState.encounteredAt !== props.defaultEncounteredAt ||
     formState.title.trim().length > 0;
 
+  // Persist only after the async restore settles, and clear only when the
+  // user actively emptied fields that had content. Clearing on the initial
+  // empty state would delete the stored draft before it could be restored.
   useEffect(() => {
+    if (!draftRestored) {
+      return;
+    }
+
     if (hasUnsavedChanges) {
+      draftHadContentRef.current = true;
       void persistEncryptedDraft(storageKey, formState);
       return;
     }
 
-    clearEncryptedDraft(storageKey);
-  }, [formState, hasUnsavedChanges, storageKey]);
+    if (draftHadContentRef.current) {
+      draftHadContentRef.current = false;
+      clearEncryptedDraft(storageKey);
+    }
+  }, [draftRestored, formState, hasUnsavedChanges, storageKey]);
 
   useBeforeUnloadWarning(hasUnsavedChanges);
 

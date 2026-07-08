@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { useFetcher } from "react-router";
 import remarkGfm from "remark-gfm";
 
 import { DebugJsonModal } from "~/components/soap-plugins/DebugJsonModal";
@@ -230,21 +229,45 @@ function ToolSubcard(props: {
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 export function CalcMcpCard(props: SoapPluginCardProps) {
-  const toolsFetcher = useFetcher<ToolsResponse>();
+  const [toolsData, setToolsData] = useState<ToolsResponse | null>(null);
+  const [loadingTools, setLoadingTools] = useState(true);
+  const [toolsError, setToolsError] = useState(false);
   const [scope, setScope] = useState<Scope>("current");
 
   const ageLabel = formatPatientAge(props.patient.birthDate, { timeZone: props.timeZone });
   const ageReady = Boolean(ageLabel);
 
-  // Load tool list on mount
-  useEffect(() => {
-    if (toolsFetcher.state === "idle" && !toolsFetcher.data) {
-      toolsFetcher.load(`/patients/${props.patientId}/soap-plugins/calc-mcp-tools`);
+  // Plain fetch with explicit error handling: a network failure loading the
+  // tool list must not bubble to the route ErrorBoundary and unmount the form.
+  const loadTools = useCallback(async () => {
+    setLoadingTools(true);
+    setToolsError(false);
+    try {
+      const response = await fetch(
+        `/patients/${props.patientId}/soap-plugins/calc-mcp-tools`,
+        {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        },
+      );
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!response.ok || !contentType.includes("application/json")) {
+        setToolsError(true);
+        return;
+      }
+      setToolsData((await response.json()) as ToolsResponse);
+    } catch {
+      setToolsError(true);
+    } finally {
+      setLoadingTools(false);
     }
-  }, []);
+  }, [props.patientId]);
 
-  const tools = toolsFetcher.data?.tools ?? [];
-  const loadingTools = toolsFetcher.state !== "idle";
+  useEffect(() => {
+    void loadTools();
+  }, [loadTools]);
+
+  const tools = toolsData?.tools ?? [];
 
   return (
     <PluginCard
@@ -286,6 +309,17 @@ export function CalcMcpCard(props: SoapPluginCardProps) {
                   key={i}
                 />
               ))}
+            </div>
+          ) : toolsError ? (
+            <div className="space-y-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+              <p>Não foi possível carregar as calculadoras.</p>
+              <button
+                className="button-secondary px-3 py-1 text-xs"
+                onClick={() => void loadTools()}
+                type="button"
+              >
+                Tentar novamente
+              </button>
             </div>
           ) : tools.length === 0 ? (
             <p className="text-sm text-[color:var(--muted)]">

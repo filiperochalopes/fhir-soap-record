@@ -32,5 +32,5 @@ export async function loader({
     soapNotes,
   });
 
-  return { summary };
+  return Response.json({ summary });
 }

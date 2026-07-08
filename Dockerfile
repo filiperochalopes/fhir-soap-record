@@ -4,6 +4,9 @@ FROM node:22-alpine AS deps
 ARG PNPM_VERSION
 WORKDIR /app
 
+# Ghostscript compresses scanned PDF attachments before they reach S3.
+RUN apk add --no-cache ghostscript
+
 COPY package.json pnpm-lock.yaml ./
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 RUN pnpm install --frozen-lockfile
@@ -21,6 +24,9 @@ RUN pnpm build
 FROM node:22-alpine AS runner
 ARG PNPM_VERSION
 WORKDIR /app
+
+# Ghostscript compresses scanned PDF attachments before they reach S3.
+RUN apk add --no-cache ghostscript
 
 ENV NODE_ENV=production
 ENV PORT=3000

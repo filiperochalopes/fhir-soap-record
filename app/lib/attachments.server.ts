@@ -17,6 +17,7 @@ import type {
 } from "~/lib/attachment-plugins/types";
 import { writeAuditLog } from "~/lib/audit.server";
 import { env } from "~/lib/env.server";
+import { compressPdfBuffer } from "~/lib/pdf-compression.server";
 import { hasPluginCredential } from "~/lib/plugin-credentials.server";
 import { prisma } from "~/lib/prisma.server";
 
@@ -213,7 +214,16 @@ export async function uploadDraftAttachment(input: {
   }
 
   const draft = await getOrCreateEncounterDraft(input);
-  const buffer = Buffer.from(await input.file.arrayBuffer());
+  const uploadedBuffer = Buffer.from(await input.file.arrayBuffer());
+  const compression =
+    contentType === "application/pdf"
+      ? await compressPdfBuffer(uploadedBuffer)
+      : {
+          buffer: uploadedBuffer,
+          compressed: false,
+          originalByteSize: uploadedBuffer.length,
+        };
+  const buffer = compression.buffer;
   const sha256 = createHash("sha256").update(buffer).digest("hex");
   const bucket = await ensureBucket();
   const s3Key = `patients/${input.patientId}/drafts/${draft.id}/${randomUUID()}-${input.file.name || "attachment"}`;
@@ -232,7 +242,7 @@ export async function uploadDraftAttachment(input: {
     data: {
       appointmentId: input.appointmentId ?? null,
       authorUserId: input.authorUserId,
-      byteSize: input.file.size,
+      byteSize: buffer.length,
       contentType,
       draftId: draft.id,
       fileName: input.file.name || "attachment",
@@ -254,6 +264,12 @@ export async function uploadDraftAttachment(input: {
       contentType: attachment.contentType,
       draftId: draft.id,
       fileName: attachment.fileName,
+      ...(compression.compressed
+        ? {
+            compression: env.ATTACHMENT_PDF_COMPRESSION,
+            originalByteSize: compression.originalByteSize,
+          }
+        : {}),
     } satisfies Prisma.JsonObject,
     userId: input.authorUserId,
   });

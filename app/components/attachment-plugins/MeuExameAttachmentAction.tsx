@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useFetcher } from "react-router";
+import { Link } from "react-router";
 
 import type {
   AttachmentPluginActionProps,
@@ -11,11 +11,34 @@ type PluginActionResponse = {
   execution?: AttachmentPluginExecutionSummary;
 };
 
+const POLL_INTERVAL_MS = 2_500;
+
+// Network failures here must never bubble to the route ErrorBoundary: this
+// card polls in the background while the clinician is typing the SOAP note,
+// so a dropped connection has to keep the screen alive and retry silently.
+async function submitPluginIntent(action: string, intent: "refresh" | "start") {
+  const formData = new FormData();
+  formData.set("intent", intent);
+  const response = await fetch(action, {
+    body: formData,
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    method: "POST",
+  });
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return { error: "Resposta inesperada do servidor." } satisfies PluginActionResponse;
+  }
+  return (await response.json()) as PluginActionResponse;
+}
+
 export function MeuExameAttachmentAction(
   props: AttachmentPluginActionProps,
 ) {
-  const fetcher = useFetcher<PluginActionResponse>();
   const [execution, setExecution] = useState(props.execution);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [pollTick, setPollTick] = useState(0);
   const [copied, setCopied] = useState(false);
   const action = `/patients/${props.patientId}/attachments/${props.attachment.id}/plugins/${props.plugin.id}`;
   const pending = ["queued", "processing"].includes(execution?.status ?? "");
@@ -25,24 +48,36 @@ export function MeuExameAttachmentAction(
   }, [props.execution]);
 
   useEffect(() => {
-    if (!fetcher.data?.execution) {
+    if (!pending) {
       return;
     }
-    setExecution(fetcher.data.execution);
-    props.onExecutionChange(fetcher.data.execution);
-  }, [fetcher.data]);
-
-  useEffect(() => {
-    if (!pending || fetcher.state !== "idle") {
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      const formData = new FormData();
-      formData.set("intent", "refresh");
-      fetcher.submit(formData, { action, method: "post" });
-    }, 2500);
-    return () => window.clearTimeout(timeout);
-  }, [action, fetcher, pending]);
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const payload = await submitPluginIntent(action, "refresh");
+        if (cancelled) {
+          return;
+        }
+        if (payload.execution) {
+          setRequestError(null);
+          setExecution(payload.execution);
+          props.onExecutionChange(payload.execution);
+        } else if (payload.error) {
+          setRequestError(payload.error);
+        }
+      } catch {
+        // Falha de rede transitória: mantém o polling no próximo ciclo.
+      } finally {
+        if (!cancelled) {
+          setPollTick((tick) => tick + 1);
+        }
+      }
+    }, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [action, pending, pollTick]);
 
   async function copySummary() {
     if (!execution?.summary) {
@@ -53,10 +88,24 @@ export function MeuExameAttachmentAction(
     window.setTimeout(() => setCopied(false), 1500);
   }
 
-  function start() {
-    const formData = new FormData();
-    formData.set("intent", "start");
-    fetcher.submit(formData, { action, method: "post" });
+  async function start() {
+    setSubmitting(true);
+    setRequestError(null);
+    try {
+      const payload = await submitPluginIntent(action, "start");
+      if (payload.execution) {
+        setExecution(payload.execution);
+        props.onExecutionChange(payload.execution);
+      } else if (payload.error) {
+        setRequestError(payload.error);
+      }
+    } catch {
+      setRequestError(
+        "Falha de conexão ao enviar para o MeuExame. Verifique a rede e tente novamente.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (!props.plugin.configured) {
@@ -76,11 +125,11 @@ export function MeuExameAttachmentAction(
       {!execution || execution.status === "failed" ? (
         <button
           className="button-secondary"
-          disabled={fetcher.state !== "idle"}
-          onClick={start}
+          disabled={submitting}
+          onClick={() => void start()}
           type="button"
         >
-          {fetcher.state !== "idle"
+          {submitting
             ? "Enviando..."
             : execution
               ? "Tentar novamente no MeuExame"
@@ -94,9 +143,9 @@ export function MeuExameAttachmentAction(
         </p>
       ) : null}
 
-      {fetcher.data?.error || execution?.error ? (
+      {requestError || execution?.error ? (
         <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs">
-          {fetcher.data?.error ?? execution?.error}
+          {requestError ?? execution?.error}
         </p>
       ) : null}
 

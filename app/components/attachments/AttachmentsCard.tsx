@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useFetcher } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigation } from "react-router";
 
 import { attachmentPlugins } from "~/lib/attachment-plugins/registry";
 import type {
@@ -32,6 +32,20 @@ export type AttachmentsCardProps = {
   noteType: "narrative" | "soap";
   patientId: number;
 };
+
+const NETWORK_ERROR_MESSAGE =
+  "Falha de conexão ao carregar os anexos. Verifique a rede e tente novamente.";
+
+// Attachments requests run alongside the SOAP editor, so they use plain fetch
+// with explicit error handling: a network failure in this card must never
+// bubble to the route ErrorBoundary and unmount the clinical form.
+async function parseAttachmentsResponse(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return { error: "Resposta inesperada do servidor." } as AttachmentsResponse;
+  }
+  return (await response.json()) as AttachmentsResponse;
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -117,10 +131,13 @@ function AttachmentRow(props: {
 }
 
 export function AttachmentsCard(props: AttachmentsCardProps) {
-  const listFetcher = useFetcher<AttachmentsResponse>();
-  const uploadFetcher = useFetcher<AttachmentsResponse>();
+  const navigation = useNavigation();
+  const previousNavigationState = useRef(navigation.state);
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState("");
+  const [responseData, setResponseData] = useState<AttachmentsResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [executionOverrides, setExecutionOverrides] = useState<
     Record<string, AttachmentPluginExecutionSummary>
   >({});
@@ -128,32 +145,77 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
     props.draftStorageKey,
   )}`;
 
-  useEffect(() => {
-    if (listFetcher.state === "idle" && !listFetcher.data) {
-      listFetcher.load(attachmentsUrl);
+  const refreshAttachments = useCallback(async () => {
+    try {
+      const response = await fetch(attachmentsUrl, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const payload = await parseAttachmentsResponse(response);
+      if (payload.error) {
+        setError(payload.error);
+        return;
+      }
+      setError(null);
+      setResponseData(payload);
+    } catch {
+      setError(NETWORK_ERROR_MESSAGE);
     }
-  }, [attachmentsUrl, listFetcher]);
+  }, [attachmentsUrl]);
 
   useEffect(() => {
-    if (
-      uploadFetcher.state === "idle" &&
-      uploadFetcher.data &&
-      !uploadFetcher.data.error
-    ) {
-      listFetcher.load(attachmentsUrl);
+    void refreshAttachments();
+  }, [refreshAttachments]);
+
+  // Saving a note attaches the draft files server-side; reload the list when
+  // a route navigation (e.g. the SOAP form POST + redirect) settles.
+  useEffect(() => {
+    if (previousNavigationState.current !== "idle" && navigation.state === "idle") {
+      void refreshAttachments();
+    }
+    previousNavigationState.current = navigation.state;
+  }, [navigation.state, refreshAttachments]);
+
+  async function submitAttachmentForm(formData: FormData) {
+    setIsUploading(true);
+    try {
+      const response = await fetch(`/patients/${props.patientId}/attachments`, {
+        body: formData,
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        method: "post",
+      });
+      const payload = await parseAttachmentsResponse(response);
+      if (payload.error) {
+        setError(payload.error);
+        return;
+      }
+      setError(null);
+      setResponseData(payload);
       setSelectedFile("");
       if (inputRef.current) {
         inputRef.current.value = "";
       }
+    } catch {
+      setError(NETWORK_ERROR_MESSAGE);
+    } finally {
+      setIsUploading(false);
     }
-  }, [attachmentsUrl, listFetcher, uploadFetcher.data, uploadFetcher.state]);
+  }
 
-  const responseData =
-    uploadFetcher.data && !uploadFetcher.data.error
-      ? uploadFetcher.data
-      : listFetcher.data && !listFetcher.data.error
-        ? listFetcher.data
-        : undefined;
+  function handleUploadSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitAttachmentForm(new FormData(event.currentTarget));
+  }
+
+  function deleteAttachment(id: number) {
+    const formData = new FormData();
+    formData.set("intent", "delete");
+    formData.set("attachmentId", String(id));
+    formData.set("draftKey", props.draftStorageKey);
+    void submitAttachmentForm(formData);
+  }
+
   const withOverrides = (attachment: AttachmentSummary) => {
     const pluginExecutions = attachment.pluginExecutions ?? [];
     return {
@@ -185,19 +247,6 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
         plugins: responseData.plugins ?? [],
       }
     : undefined;
-  const error = uploadFetcher.data?.error ?? listFetcher.data?.error;
-  const isUploading = uploadFetcher.state !== "idle";
-
-  function deleteAttachment(id: number) {
-    const formData = new FormData();
-    formData.set("intent", "delete");
-    formData.set("attachmentId", String(id));
-    formData.set("draftKey", props.draftStorageKey);
-    uploadFetcher.submit(formData, {
-      action: `/patients/${props.patientId}/attachments`,
-      method: "post",
-    });
-  }
 
   function setExecution(
     attachmentId: number,
@@ -222,12 +271,7 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
         </p>
       </header>
 
-      <uploadFetcher.Form
-        action={`/patients/${props.patientId}/attachments`}
-        className="space-y-3"
-        encType="multipart/form-data"
-        method="post"
-      >
+      <form className="space-y-3" onSubmit={handleUploadSubmit}>
         <input name="intent" type="hidden" value="upload" />
         <input name="draftKey" type="hidden" value={props.draftStorageKey} />
         <input name="noteType" type="hidden" value={props.noteType} />
@@ -258,12 +302,19 @@ export function AttachmentsCard(props: AttachmentsCardProps) {
             {isUploading ? "Enviando..." : "Anexar"}
           </button>
         </div>
-      </uploadFetcher.Form>
+      </form>
 
       {error ? (
-        <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm">
-          {error}
-        </p>
+        <div className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm">
+          <p>{error}</p>
+          <button
+            className="button-secondary px-3 py-1 text-xs"
+            onClick={() => void refreshAttachments()}
+            type="button"
+          >
+            Tentar novamente
+          </button>
+        </div>
       ) : null}
 
       <div className="space-y-2">

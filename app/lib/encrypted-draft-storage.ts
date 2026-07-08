@@ -116,8 +116,15 @@ export async function loadEncryptedDraft<T extends Record<string, string>>(
     return null;
   }
 
+  let payload: EncryptedDraftPayload;
   try {
-    const payload = JSON.parse(stored) as EncryptedDraftPayload;
+    payload = JSON.parse(stored) as EncryptedDraftPayload;
+  } catch {
+    window.localStorage.removeItem(`${LOCAL_PREFIX}${storageKey}`);
+    return null;
+  }
+
+  try {
     const key = await getDraftKey();
     const decrypted = await window.crypto.subtle.decrypt(
       { iv: base64ToBytes(payload.iv), name: "AES-GCM" },
@@ -127,7 +134,9 @@ export async function loadEncryptedDraft<T extends Record<string, string>>(
     const text = new TextDecoder().decode(decrypted);
     return JSON.parse(text) as Partial<T>;
   } catch {
-    window.localStorage.removeItem(`${LOCAL_PREFIX}${storageKey}`);
+    // IndexedDB/key/decrypt failures can be transient (locked database,
+    // another tab mid-upgrade). Keep the ciphertext so a later load can
+    // still recover the draft instead of destroying clinical text.
     return null;
   }
 }

@@ -14,6 +14,10 @@ const optionalString = z.preprocess(
 
 const envSchema = z.object({
   APP_URL: z.string().url().default("http://localhost:3000"),
+  ATTACHMENT_PDF_COMPRESSION: z.preprocess(
+    (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+    z.enum(["off", "150dpi", "200dpi"]).default("200dpi"),
+  ),
   COOKIE_NAME: z.string().default("clinic_token"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   API_DRY_RUN: z.preprocess(
