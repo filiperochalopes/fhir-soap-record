@@ -20,7 +20,8 @@
     "prisma:migrate:resolve": "prisma migrate resolve",
     "create:user": "tsx scripts/create-auth-user.ts",
     "create:token": "tsx scripts/create-token.ts",
-    "revoke:token": "tsx scripts/revoke-token.ts"
+    "revoke:token": "tsx scripts/revoke-token.ts",
+    "export:soap-anonymized": "node scripts/get-anonymized-soap-records.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1061.0",
