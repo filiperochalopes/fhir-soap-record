@@ -7,7 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import type { Identifier, Patient, Prisma } from "@prisma/client";
+import type { Identifier, Patient, Prisma, PrismaClient } from "@prisma/client";
 
 import { env } from "~/lib/env.server";
 import { decodePluginSecretEncryptionKey } from "~/lib/plugin-secret-key.server";
@@ -458,6 +458,25 @@ export async function consumeDocsWebhookSuggestion(input: {
       authorUserId: input.userId,
       consumedAt: null,
       id: input.eventId,
+      patientId: input.patientId,
+    },
+    data: {
+      consumedAt: new Date(),
+    },
+  });
+}
+
+export async function consumePendingDocsWebhookSuggestions(
+  input: {
+    patientId: number;
+    userId: number;
+  },
+  db: Prisma.TransactionClient | PrismaClient = prisma,
+) {
+  await db.clinicalDocumentWebhookEvent.updateMany({
+    where: {
+      authorUserId: input.userId,
+      consumedAt: null,
       patientId: input.patientId,
     },
     data: {

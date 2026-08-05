@@ -31,6 +31,7 @@ import {
 } from "~/lib/narrative-notes.server";
 import { prisma } from "~/lib/prisma.server";
 import {
+  consumePendingDocsWebhookSuggestions,
   getDocsAppOrigin,
   getDocsIntegrationSettings,
   listPendingDocsWebhookSuggestions,
@@ -1043,12 +1044,25 @@ export async function action({
       });
     } else {
       const input = parseSoapForm(formData, timeZone);
-      await createSoapNote({
-        ...input,
-        appointmentId,
-        attachmentDraftKey: String(formData.get("attachmentDraftKey") ?? ""),
-        authorUserId: auth.user.id,
-        patientId: Number(params.patientId),
+      const patientId = Number(params.patientId);
+      await prisma.$transaction(async (tx) => {
+        await createSoapNote(
+          {
+            ...input,
+            appointmentId,
+            attachmentDraftKey: String(formData.get("attachmentDraftKey") ?? ""),
+            authorUserId: auth.user.id,
+            patientId,
+          },
+          tx,
+        );
+        await consumePendingDocsWebhookSuggestions(
+          {
+            patientId,
+            userId: auth.user.id,
+          },
+          tx,
+        );
       });
     }
 
