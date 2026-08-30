@@ -1,8 +1,10 @@
+name: soap-ehr
+
 services:
-  fhir-soap-record-db:
+  soap-ehr-db:
     image: mysql:8.4
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-fhir_soap_record}
+      MYSQL_DATABASE: ${V1_DB_NAME:-fhir_soap_record}
       MYSQL_ROOT_PASSWORD: ${DB_PASS:-clinic}
       MYSQL_USER: ${DB_USER:-clinic}
       MYSQL_PASSWORD: ${DB_PASS:-clinic}
@@ -14,13 +16,30 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
 
-  fhir-soap-record:
+  soap-ehr-db-init:
+    image: mysql:8.4
+    restart: "no"
+    depends_on:
+      soap-ehr-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: soap-ehr-db
+      DB_ROOT_PASSWORD: ${DB_PASS:-clinic}
+      DB_USER: ${DB_USER:-clinic}
+      MYSQL_PWD: ${DB_PASS:-clinic}
+      SOAP_EHR_DB_NAME: ${SOAP_EHR_DB_NAME:-soap_ehr}
+      V1_DB_NAME: ${V1_DB_NAME:-fhir_soap_record}
+    entrypoint: ["/bin/sh", "/scripts/ensure-soap-ehr-databases.sh"]
+    volumes:
+      - ./scripts/ensure-soap-ehr-databases.sh:/scripts/ensure-soap-ehr-databases.sh:ro
+
+  soap-ehr:
     build:
       context: .
       target: deps
     depends_on:
-      fhir-soap-record-db:
-        condition: service_healthy
+      soap-ehr-db-init:
+        condition: service_completed_successfully
     command: sh ./scripts/dev-with-prisma.sh
     # Load the full app config (S3, plugin key, MeuExame, etc.) so the dev-only
     # invocation `docker compose -f compose.dev.yml up` is self-sufficient.
@@ -40,9 +59,10 @@ services:
       - development
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      # In the dev stack the app runs in a container, so localhost is the app
-      # container itself. Always point Prisma at the bundled MySQL service.
-      DATABASE_URL: mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}
+      # The V2 runtime only connects to the canonical soap_ehr database.
+      DATABASE_URL: mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${SOAP_EHR_DB_NAME:-soap_ehr}
+      # Used only by the standalone migration tooling and never by runtime reads.
+      V1_DATABASE_URL: mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${V1_DB_NAME:-fhir_soap_record}
     ports:
       - "${APP_PORT:-3000}:3000"
     volumes:

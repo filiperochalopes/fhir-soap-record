@@ -74,10 +74,10 @@ export function AppShell() {
         <div className="flex flex-col gap-4 border-b border-black/5 px-6 py-5 dark:border-white/10 md:flex-row md:items-center md:justify-between">
           <div>
             <Link className="text-xs font-semibold uppercase tracking-[0.28em] text-[color:var(--muted)]" to="/patients">
-              Clinical MVP
+              soap-ehr
             </Link>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-              FHIR-aligned private office workflow
+              openEHR-inspired records with FHIR interoperability
             </h1>
             <p className="mt-1 text-sm text-[color:var(--muted)]">
               {user.fullName} · CRM {user.crm}/{user.crmUf}

@@ -1,8 +1,8 @@
 import { requireUserSession } from "~/lib/auth.server";
 import { runSingleToolAgent } from "~/lib/ai/mcp.server";
+import { getPatientClinicalCompositions } from "~/lib/ehr/compositions.server";
 import { prisma } from "~/lib/prisma.server";
 import { buildAnonymizedSoapText } from "~/lib/soap-plugins/anonymize";
-import { getPatientSoapNotes } from "~/lib/soap-notes.server";
 
 function isImcTool(toolName: string) {
   return toolName === "imc" || toolName.endsWith("__imc");
@@ -82,12 +82,14 @@ export async function action({
   }> = [];
 
   if (scope === "current_history") {
-    const notes = await getPatientSoapNotes(patientId);
+    const notes = (await getPatientClinicalCompositions(patientId)).filter(
+      (composition) => composition.kind === "soap",
+    );
     history = notes.map((note) => ({
-      subjective: note.subjective,
-      objective: note.objective,
-      assessment: note.assessment,
-      plan: note.plan,
+      subjective: note.subjective ?? "",
+      objective: note.objective ?? "",
+      assessment: note.assessment ?? "",
+      plan: note.plan ?? "",
       encounteredAt: note.encounteredAt,
     }));
   }

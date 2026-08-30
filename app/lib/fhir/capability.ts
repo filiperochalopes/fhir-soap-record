@@ -23,7 +23,7 @@ export function capabilityStatement(baseUrl: string) {
       url: baseUrl,
     },
     software: {
-      name: "fhir-soap-record",
+      name: "soap-ehr",
       version: "0.1.0",
     },
     patchFormat: ["application/json-patch+json"],

@@ -52,7 +52,7 @@ export function toFhirPatient(patient: PatientWithRelations) {
       ? {
           extension: [
             {
-              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
+              url: "https://soap-ehr.example/StructureDefinition/patient-draft",
               valueBoolean: true,
             },
           ],

@@ -1,10 +1,10 @@
 # Prompt para o agente do app Docs
 
-Implemente no app `/Users/filipelopes/Desktop/Web/Progress/v2.docs.filipelopes.med.br` a camada de integração com o app `fhir-soap-record`.
+Implemente no app `/Users/filipelopes/Desktop/Web/Progress/v2.docs.filipelopes.med.br` a camada de integração com o app `soap-ehr`.
 
 ## Objetivo
 
-O app `fhir-soap-record` abre o Docs em nova aba para gerar quatro tipos de documento:
+O app `soap-ehr` abre o Docs em nova aba para gerar quatro tipos de documento:
 
 - prescrição: rota `/prescription`
 - solicitação de exames: rota `/solicitacao-exames`
@@ -15,9 +15,9 @@ O Docs deve descriptografar os valores sensíveis dos parâmetros da URL, preenc
 
 ## Contrato de entrada
 
-O `fhir-soap-record` chama o Docs com query params individuais:
+O `soap-ehr` chama o Docs com query params individuais:
 
-- `source=fhir-soap-record`
+- `source=soap-ehr`
 - `state=<encrypted uuid>`
 - `document.kind=<encrypted document type>`
 - `document.templateId=<encrypted template id>` quando houver
@@ -51,7 +51,7 @@ A API key deve existir do lado do Docs como segredo/configuração do servidor o
 
 Ao carregar qualquer uma das três rotas:
 
-- se `source=fhir-soap-record` e houver valores `v1:<iv>:<tag>:<ciphertext>`, descriptografar antes de aplicar preferências locais;
+- se `source=soap-ehr` e houver valores `v1:<iv>:<tag>:<ciphertext>`, descriptografar antes de aplicar preferências locais;
 - preencher `patient.name` com `patient.name`;
 - preencher `patient.birthDate` com `patient.birthDate`;
 - preencher CNS/CPF quando o formulário tiver campo compatível;

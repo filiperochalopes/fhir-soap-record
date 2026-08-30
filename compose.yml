@@ -1,7 +1,9 @@
+name: soap-ehr
+
 services:
-  fhir-soap-record-db:
+  soap-ehr-db:
     image: mysql:8.4
-    container_name: fhir-soap-record-db
+    container_name: soap-ehr-db
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -11,7 +13,7 @@ services:
     networks:
       - data
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-fhir_soap_record}
+      MYSQL_DATABASE: ${V1_DB_NAME:-fhir_soap_record}
       MYSQL_ROOT_PASSWORD: ${DB_PASS:-clinic}
       MYSQL_USER: ${DB_USER:-clinic}
       MYSQL_PASSWORD: ${DB_PASS:-clinic}
@@ -25,10 +27,29 @@ services:
     volumes:
       - ./data/db:/var/lib/mysql
 
-  fhir-soap-record:
+  soap-ehr-db-init:
+    image: mysql:8.4
+    restart: "no"
+    networks:
+      - data
+    depends_on:
+      soap-ehr-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: soap-ehr-db
+      DB_ROOT_PASSWORD: ${DB_PASS:-clinic}
+      DB_USER: ${DB_USER:-clinic}
+      MYSQL_PWD: ${DB_PASS:-clinic}
+      SOAP_EHR_DB_NAME: ${SOAP_EHR_DB_NAME:-soap_ehr}
+      V1_DB_NAME: ${V1_DB_NAME:-fhir_soap_record}
+    entrypoint: ["/bin/sh", "/scripts/ensure-soap-ehr-databases.sh"]
+    volumes:
+      - ./scripts/ensure-soap-ehr-databases.sh:/scripts/ensure-soap-ehr-databases.sh:ro
+
+  soap-ehr:
     build:
       context: .
-    container_name: fhir-soap-record
+    container_name: soap-ehr
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -40,16 +61,17 @@ services:
       - internal
       - data
     depends_on:
-      fhir-soap-record-db:
-        condition: service_healthy
+      soap-ehr-db-init:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/login"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/login"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     environment:
-      DATABASE_URL: ${DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@fhir-soap-record-db:3306/${DB_NAME:-fhir_soap_record}}
+      DATABASE_URL: ${SOAP_EHR_DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${SOAP_EHR_DB_NAME:-soap_ehr}}
+      V1_DATABASE_URL: ${V1_DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${V1_DB_NAME:-fhir_soap_record}}
       APP_URL: ${APP_URL:-http://localhost:3000}
       API_DRY_RUN: ${API_DRY_RUN:-false}
       COOKIE_NAME: clinic_token

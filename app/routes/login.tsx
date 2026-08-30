@@ -53,14 +53,14 @@ export default function LoginRoute() {
       <section className="panel grid w-full overflow-hidden lg:grid-cols-[1.15fr_0.85fr]">
         <div className="bg-[color:var(--accent-soft)] px-8 py-10">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[color:var(--muted)]">
-            Study project + clinic MVP
+            soap-ehr · clinical standards lab
           </p>
           <h1 className="mt-4 max-w-md text-4xl font-semibold leading-tight">
-            Token-only login for a focused clinical workflow.
+            One clinical record, complementary health-data standards.
           </h1>
           <p className="mt-4 max-w-lg text-sm leading-6 text-[color:var(--muted)]">
-            This monolith keeps the flow narrow: patient registry, agenda visibility,
-            SOAP registration, import, and FHIR-oriented API access.
+            openEHR-inspired canonical compositions power the clinical workflow,
+            FHIR exposes interoperability APIs, and OMOP is the analytical roadmap.
           </p>
         </div>
         <div className="px-8 py-10">
@@ -93,4 +93,3 @@ export default function LoginRoute() {
     </main>
   );
 }
-

@@ -73,7 +73,7 @@ function patientDraftFlag(resource: Record<string, unknown>) {
     const record = asRecord(item);
     return (
       record?.url ===
-        "https://fhir-soap-record.example/StructureDefinition/patient-draft" &&
+        "https://soap-ehr.example/StructureDefinition/patient-draft" &&
       record.valueBoolean === true
     );
   });

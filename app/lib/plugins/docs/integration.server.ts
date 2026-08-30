@@ -337,7 +337,7 @@ export async function buildDocsLaunchUrl(input: {
   )}`;
 
   const url = new URL(`${normalizeDocsBaseUrl()}${documentRoute(input.documentType)}`);
-  url.searchParams.set("source", "fhir-soap-record");
+  url.searchParams.set("source", "soap-ehr");
   for (const [key, value] of encryptedSearchParams(
     {
       "document.kind": input.documentType,

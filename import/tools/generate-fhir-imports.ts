@@ -1577,7 +1577,7 @@ function buildPatientResource(patient: ImportPatient, patientReferenceId: string
       ? {
           extension: [
             {
-              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
+              url: "https://soap-ehr.example/StructureDefinition/patient-draft",
               valueBoolean: true,
             },
           ],

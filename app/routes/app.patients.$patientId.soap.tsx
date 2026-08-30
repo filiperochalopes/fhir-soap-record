@@ -24,11 +24,11 @@ import {
   migratePlainSessionDraft,
   persistEncryptedDraft,
 } from "~/lib/encrypted-draft-storage";
-import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import {
-  createNarrativeNote,
-  getPatientNarrativeNotes,
-} from "~/lib/narrative-notes.server";
+  createNarrativeComposition,
+  createSoapComposition,
+  getPatientClinicalCompositions,
+} from "~/lib/ehr/compositions.server";
 import { prisma } from "~/lib/prisma.server";
 import {
   consumePendingDocsWebhookSuggestions,
@@ -38,7 +38,6 @@ import {
 } from "~/lib/plugins/docs/integration.server";
 import { getPatientPersonalDataPrivacy, getUiTimeZone } from "~/lib/settings.server";
 import { soapPlugins } from "~/lib/soap-plugins/registry";
-import { createSoapNote, getPatientSoapNotes } from "~/lib/soap-notes.server";
 import { parseNarrativeForm } from "~/lib/validation/narrative";
 import { parseSoapForm } from "~/lib/validation/soap";
 import {
@@ -925,39 +924,22 @@ export async function loader({
 
 async function loadRecoverableNotes(patientId: number) {
   try {
-    const [previousSoapNotes, previousNarrativeNotes] = await Promise.all([
-      getPatientSoapNotes(patientId),
-      getPatientNarrativeNotes(patientId),
-    ]);
-
-    const previousNotes: PreviousNote[] = [
-      ...previousSoapNotes.map((note) => ({
+    const compositions = await getPatientClinicalCompositions(patientId);
+    const previousNotes: PreviousNote[] = compositions
+      .map((note) => ({
         author: note.author,
         encounteredAt: note.encounteredAt,
-        id: `soap-${note.id}`,
-        kind: "soap" as const,
-        sections: [
-          { text: note.subjective, title: "Subjective" },
-          { text: note.objective, title: "Objective" },
-          { text: note.assessment, title: "Assessment" },
-          { text: note.plan, title: "Plan" },
-        ],
-        title: "SOAP note",
-      })),
-      ...previousNarrativeNotes.map((note) => ({
-        author: note.author,
-        encounteredAt: note.encounteredAt,
-        id: `narrative-${note.id}`,
-        kind: "narrative" as const,
-        sections: normalizeNarrativeSections(note.sections),
-        title: note.title?.trim() || "Narrative note",
-      })),
-    ].sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
+        id: note.id,
+        kind: note.kind,
+        sections: note.sections,
+        title: note.title,
+      }))
+      .sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime());
 
     return {
       contextError: null as string | null,
       previousNotes,
-      soapNoteCount: previousSoapNotes.length,
+      soapNoteCount: compositions.filter((note) => note.kind === "soap").length,
     };
   } catch (error) {
     return {
@@ -1029,7 +1011,7 @@ export async function action({
   try {
     if (noteType === "narrative") {
       const input = parseNarrativeForm(formData, timeZone);
-      await createNarrativeNote({
+      await createNarrativeComposition({
         attachmentDraftKey: String(formData.get("attachmentDraftKey") ?? ""),
         authorUserId: auth.user.id,
         encounteredAt: input.encounteredAt,
@@ -1046,7 +1028,7 @@ export async function action({
       const input = parseSoapForm(formData, timeZone);
       const patientId = Number(params.patientId);
       await prisma.$transaction(async (tx) => {
-        await createSoapNote(
+        await createSoapComposition(
           {
             ...input,
             appointmentId,

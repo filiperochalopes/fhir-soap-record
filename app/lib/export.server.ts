@@ -1,6 +1,9 @@
 import type { Prisma } from "@prisma/client";
 
-import { normalizeNarrativeSections } from "~/lib/narrative-notes";
+import type { ClinicalCompositionRecord } from "~/lib/ehr/compositions.server";
+import { getClinicalCompositions } from "~/lib/ehr/compositions.server";
+import { NARRATIVE_TEMPLATE_ID } from "~/lib/ehr/templates/narrative";
+import { SOAP_TEMPLATE_ID } from "~/lib/ehr/templates/soap";
 import { Prisma as PrismaRuntime, prisma } from "~/lib/prisma.server";
 import { getOrCreateInstanceExportNamespace } from "~/lib/settings.server";
 import { toFhirNarrativeDiv } from "~/lib/utils";
@@ -10,22 +13,6 @@ const patientExportQuery = PrismaRuntime.validator<Prisma.PatientDefaultArgs>()(
     appointments: true,
     contacts: true,
     identifier: true,
-    narrativeNotes: {
-      include: {
-        author: true,
-      },
-      orderBy: {
-        encounteredAt: "asc",
-      },
-    },
-    soapNotes: {
-      include: {
-        author: true,
-      },
-      orderBy: {
-        encounteredAt: "asc",
-      },
-    },
     telecom: true,
   },
 });
@@ -81,16 +68,16 @@ function appointmentExportId(namespace: string, appointmentId: number) {
   return `exp-${namespace}-appointment-${appointmentId}`;
 }
 
-function soapExportId(namespace: string, noteId: number) {
+function soapExportId(namespace: string, noteId: string) {
   return `exp-${namespace}-soap-${noteId}`;
 }
 
-function narrativeExportId(namespace: string, noteId: number) {
+function narrativeExportId(namespace: string, noteId: string) {
   return `exp-${namespace}-narrative-${noteId}`;
 }
 
 function exportIdentifierSystem(namespace: string, resourceType: "patient" | "soap" | "narrative") {
-  return `urn:fhir-soap-record:export:${namespace}:${resourceType}`;
+  return `urn:soap-ehr:export:${namespace}:${resourceType}`;
 }
 
 function formatDateOnly(value: Date) {
@@ -189,7 +176,7 @@ function buildExportPatientResource(
       : {
           extension: [
             {
-              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
+              url: "https://soap-ehr.example/StructureDefinition/patient-draft",
               valueBoolean: true,
             },
           ],
@@ -241,7 +228,7 @@ function buildSoapCompositionResource(
   namespace: string,
   patientResourceId: string,
   patientDisplayName: string,
-  note: ExportPatientRecord["soapNotes"][number],
+  note: ClinicalCompositionRecord,
 ) {
   return {
     resourceType: "Composition",
@@ -272,28 +259,28 @@ function buildSoapCompositionResource(
       {
         title: "Subjective",
         text: {
-          div: toFhirNarrativeDiv(note.subjective),
+          div: toFhirNarrativeDiv(note.subjective ?? ""),
           status: "generated",
         },
       },
       {
         title: "Objective",
         text: {
-          div: toFhirNarrativeDiv(note.objective),
+          div: toFhirNarrativeDiv(note.objective ?? ""),
           status: "generated",
         },
       },
       {
         title: "Assessment",
         text: {
-          div: toFhirNarrativeDiv(note.assessment),
+          div: toFhirNarrativeDiv(note.assessment ?? ""),
           status: "generated",
         },
       },
       {
         title: "Plan",
         text: {
-          div: toFhirNarrativeDiv(note.plan),
+          div: toFhirNarrativeDiv(note.plan ?? ""),
           status: "generated",
         },
       },
@@ -305,9 +292,9 @@ function buildNarrativeCompositionResource(
   namespace: string,
   patientResourceId: string,
   patientDisplayName: string,
-  note: ExportPatientRecord["narrativeNotes"][number],
+  note: ClinicalCompositionRecord,
 ) {
-  const sections = normalizeNarrativeSections(note.sections);
+  const sections = note.sections;
 
   return {
     resourceType: "Composition",
@@ -382,13 +369,17 @@ export async function getExportOverview() {
   const namespace = await getOrCreateInstanceExportNamespace();
   const [appointments, narrativeNotes, patients, soapNotes] = await Promise.all([
     prisma.appointment.count(),
-    prisma.narrativeNote.count(),
+    prisma.compositionVersion.count({
+      where: { followingVersions: { none: {} }, templateId: NARRATIVE_TEMPLATE_ID },
+    }),
     prisma.patient.count({
       where: {
         mergedIntoPatientId: null,
       },
     }),
-    prisma.soapNote.count(),
+    prisma.compositionVersion.count({
+      where: { followingVersions: { none: {} }, templateId: SOAP_TEMPLATE_ID },
+    }),
   ]);
 
   return {
@@ -404,7 +395,11 @@ export async function getExportOverview() {
 
 export async function buildFullInstanceExportBundle() {
   const namespace = await getOrCreateInstanceExportNamespace();
-  const groups = groupPatientsForExport(await loadPatientsForExport());
+  const [patients, compositions] = await Promise.all([
+    loadPatientsForExport(),
+    getClinicalCompositions(),
+  ]);
+  const groups = groupPatientsForExport(patients);
   const entry: ExportBundle["entry"] = [];
   let appointments = 0;
   let narrativeNotes = 0;
@@ -431,12 +426,13 @@ export async function buildFullInstanceExportBundle() {
       appointments += 1;
     }
 
-    const mergedSoapNotes = group.members
-      .flatMap((patient) => patient.soapNotes)
+    const memberIds = new Set(group.members.map((patient) => patient.id));
+    const mergedSoapNotes = compositions
+      .filter((note) => memberIds.has(note.patientId) && note.kind === "soap")
       .sort((left, right) => {
         const encounteredAtDiff =
           left.encounteredAt.getTime() - right.encounteredAt.getTime();
-        return encounteredAtDiff !== 0 ? encounteredAtDiff : left.id - right.id;
+        return encounteredAtDiff !== 0 ? encounteredAtDiff : left.id.localeCompare(right.id);
       });
     for (const note of mergedSoapNotes) {
       entry.push({
@@ -450,12 +446,12 @@ export async function buildFullInstanceExportBundle() {
       soapNotes += 1;
     }
 
-    const mergedNarrativeNotes = group.members
-      .flatMap((patient) => patient.narrativeNotes)
+    const mergedNarrativeNotes = compositions
+      .filter((note) => memberIds.has(note.patientId) && note.kind === "narrative")
       .sort((left, right) => {
         const encounteredAtDiff =
           left.encounteredAt.getTime() - right.encounteredAt.getTime();
-        return encounteredAtDiff !== 0 ? encounteredAtDiff : left.id - right.id;
+        return encounteredAtDiff !== 0 ? encounteredAtDiff : left.id.localeCompare(right.id);
       });
     for (const note of mergedNarrativeNotes) {
       entry.push({
@@ -478,7 +474,7 @@ export async function buildFullInstanceExportBundle() {
       resourceType: "Bundle",
       type: "transaction",
     } satisfies ExportBundle,
-    fileName: `fhir-soap-record-export-${namespace}-${dateStamp}.json`,
+    fileName: `soap-ehr-export-${namespace}-${dateStamp}.json`,
     summary: {
       appointments,
       narrativeNotes,

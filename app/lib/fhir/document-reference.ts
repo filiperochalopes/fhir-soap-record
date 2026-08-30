@@ -57,12 +57,12 @@ export function toFhirDocumentReference(
         },
       },
     ],
-    ...(attachment.soapNoteId
+    ...(attachment.compositionVersionId
       ? {
           context: {
             encounter: [
               {
-                reference: `Encounter/soap-encounter-${attachment.soapNoteId}`,
+                reference: `Encounter/soap-encounter-${attachment.compositionVersionId}`,
               },
             ],
           },

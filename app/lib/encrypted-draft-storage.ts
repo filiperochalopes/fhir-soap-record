@@ -1,4 +1,4 @@
-const DB_NAME = "fhir-soap-record-drafts";
+const DB_NAME = "soap-ehr-drafts";
 const DB_VERSION = 1;
 const KEY_STORE = "keys";
 const KEY_ID = "clinical-draft-aes-gcm-v1";

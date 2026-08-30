@@ -103,7 +103,7 @@ export type AttachmentSummary = {
   status: string;
   createdAt: Date;
   downloadUrl: string;
-  noteKind: "draft" | "soap" | "narrative" | "unknown";
+  noteKind: "composition" | "draft" | "unknown";
   pluginExecutions: AttachmentPluginExecutionSummary[];
 };
 
@@ -113,7 +113,7 @@ function toSummary(attachment: {
   createdAt: Date;
   fileName: string;
   id: number;
-  narrativeNoteId: number | null;
+  compositionVersionId: string | null;
   pluginExecutions?: Array<{
     error: string | null;
     externalJobId: string | null;
@@ -121,7 +121,6 @@ function toSummary(attachment: {
     status: string;
     summary: string | null;
   }>;
-  soapNoteId: number | null;
   status: string;
 }): AttachmentSummary {
   return {
@@ -134,11 +133,9 @@ function toSummary(attachment: {
     noteKind:
       attachment.status === "draft"
         ? "draft"
-        : attachment.soapNoteId
-          ? "soap"
-          : attachment.narrativeNoteId
-            ? "narrative"
-            : "unknown",
+        : attachment.compositionVersionId
+          ? "composition"
+          : "unknown",
     pluginExecutions: (attachment.pluginExecutions ?? []).map((execution) => ({
       ...execution,
       status: execution.status as AttachmentPluginStatus,
@@ -378,10 +375,9 @@ export async function removeDraftAttachment(input: {
 export async function promoteDraftAttachments(input: {
   appointmentId?: number | null;
   authorUserId: number;
+  compositionVersionId: string;
   draftKey?: string | null;
-  narrativeNoteId?: number | null;
   patientId: number;
-  soapNoteId?: number | null;
 }, db: AttachmentClient = prisma) {
   const draftKey = input.draftKey?.trim();
   if (!draftKey) {
@@ -409,8 +405,7 @@ export async function promoteDraftAttachments(input: {
     },
     data: {
       appointmentId: input.appointmentId ?? draft.appointmentId,
-      narrativeNoteId: input.narrativeNoteId ?? null,
-      soapNoteId: input.soapNoteId ?? null,
+      compositionVersionId: input.compositionVersionId,
       status: "attached",
     },
   });

@@ -1,33 +1,14 @@
-import type {
-  AuthUser,
-  Contact,
-  ContactPoint,
-  Identifier,
-  NarrativeNote,
-  Patient,
-} from "@prisma/client";
+import type { ClinicalCompositionRecord } from "~/lib/ehr/compositions.server";
 
 import { toNarrativeCompositionFhirId } from "~/lib/fhir/ids";
-import { normalizeNarrativeSections } from "~/lib/narrative-notes";
 import { toFhirNarrativeDiv } from "~/lib/utils";
 
-type NarrativePatient = Patient & {
-  contacts: Contact[];
-  identifier: Identifier[];
-  telecom: ContactPoint[];
-};
-
-export type NarrativeNoteWithRelations = NarrativeNote & {
-  author: AuthUser;
-  patient: NarrativePatient;
-};
-
-export function toFhirNarrativeComposition(note: NarrativeNoteWithRelations) {
-  const sections = normalizeNarrativeSections(note.sections);
+export function toFhirNarrativeComposition(note: ClinicalCompositionRecord) {
+  const sections = note.sections;
 
   return {
     resourceType: "Composition",
-    id: toNarrativeCompositionFhirId(note.id),
+    id: note.fhirCompositionId || toNarrativeCompositionFhirId(note.id),
     status: "final",
     type: {
       text: "Consultation note",

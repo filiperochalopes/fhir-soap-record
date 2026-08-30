@@ -1,7 +1,7 @@
 import { requireUserSession } from "~/lib/auth.server";
 import { generateClinicalSummary } from "~/lib/clinical-summary.server";
+import { getPatientClinicalCompositions } from "~/lib/ehr/compositions.server";
 import { prisma } from "~/lib/prisma.server";
-import { getPatientSoapNotes } from "~/lib/soap-notes.server";
 
 export async function loader({
   params,
@@ -26,7 +26,9 @@ export async function loader({
     throw new Response("Patient not found", { status: 404 });
   }
 
-  const soapNotes = await getPatientSoapNotes(patientId);
+  const soapNotes = (await getPatientClinicalCompositions(patientId)).filter(
+    (composition) => composition.kind === "soap",
+  );
   const summary = await generateClinicalSummary({
     patient,
     soapNotes,

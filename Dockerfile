@@ -7,7 +7,7 @@ WORKDIR /app
 # Ghostscript compresses scanned PDF attachments before they reach S3.
 RUN apk add --no-cache ghostscript
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 RUN pnpm install --frozen-lockfile
 
@@ -32,7 +32,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Install only production dependencies
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate && \
     pnpm install --prod --frozen-lockfile
 

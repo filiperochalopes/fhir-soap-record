@@ -1,5 +1,5 @@
 export const FHIR_SOAP_RECORD_ERROR_SYSTEM =
-  "https://fhir-soap-record.example/CodeSystem/operation-outcome";
+  "https://soap-ehr.example/CodeSystem/operation-outcome";
 
 export const FHIR_APP_ERROR_CODES = {
   patientIdentifierDuplicate: "patient-identifier-duplicate",

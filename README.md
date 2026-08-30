@@ -1,6 +1,10 @@
-# FHIR SOAP Record MVP
+# soap-ehr
 
-This repository is a study-oriented FHIR project and a usable MVP for a private clinical office workflow while OpenMRS is not yet ready in Portuguese for this specific use case.
+`soap-ehr` is a compact clinical-record application for studying three complementary health-data standards:
+
+- openEHR-inspired archetypes, operational templates, compositions and versioning are the canonical clinical persistence model;
+- FHIR remains the interoperability API and import/export surface;
+- OMOP CDM will be a derived, read-only analytical projection in the next phase.
 
 The application is intentionally narrow:
 
@@ -33,27 +37,27 @@ Operational rules in this codebase:
 - the default local stack uses the MySQL container from Docker Compose
 - schema changes are versioned through Prisma migrations in `prisma/migrations/`
 - Prisma Client remains the typed access layer used by the application
-- internal persistence stays workflow-oriented, while the API layer exposes FHIR-aligned resources
+- operational data such as users, patients, appointments and drafts remains relational
+- clinical content is stored only as versioned compositions validated against a template
+- the API layer projects canonical compositions to FHIR resources
+- `prisma/migrations/` contains only the V2 schema; V1 artifacts live exclusively under `docs/migration/v1/`
 
-## Entity and FHIR Diagram
+## Data Architecture
 
 ```mermaid
-graph TD
-  Patient --> Identifier
-  Patient --> ContactPoint
-  Patient --> Contact
-  Patient --> Appointment
-  Patient --> SoapNote
-  AuthUser --> AuthToken
-  AuthUser --> SoapNote
-  AuthUser --> AuditLog
+flowchart LR
+  Patient --> EhrRecord
+  EhrRecord --> Contribution
+  EhrRecord --> VersionedComposition
+  VersionedComposition --> CompositionVersion
+  Contribution --> CompositionVersion
+  TemplateDefinition --> CompositionVersion
+  ArchetypeDefinition --> CompositionVersion
 
-  Patient -. maps to .-> FHIRPatient[FHIR Patient]
-  Appointment -. maps to .-> FHIRAppointment[FHIR Appointment]
-  SoapNote -. maps to .-> FHIRComposition[FHIR Composition]
-  SoapNote -. maps to .-> FHIRClinicalImpression[FHIR ClinicalImpression]
-  SoapNote -. maps to .-> FHIRObservation[FHIR Observation]
-  SoapNote -. maps to .-> FHIRCondition[FHIR Condition]
+  CompositionVersion -. projects to .-> FHIRComposition[FHIR Composition]
+  CompositionVersion -. projects to .-> FHIRObservation[FHIR Observation]
+  CompositionVersion -. projects to .-> FHIRCondition[FHIR Condition]
+  CompositionVersion -. future ETL .-> OMOP[OMOP CDM 5.4]
 ```
 
 ## Local Run
@@ -96,15 +100,20 @@ Use Docker Compose for a full local stack with MySQL and the Node monolith:
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-The `db` service creates the empty `fhir_soap_record` database, and the `app` service applies Prisma migrations automatically on startup.
+The `soap-ehr-db` MySQL service hosts two isolated databases:
+
+- `soap_ehr`: canonical V2 runtime database;
+- `fhir_soap_record`: stale V1 fixture/source database used only by migration tests.
+
+The `soap-ehr` service applies only the V2 migrations to `soap_ehr`.
 
 If ports `3000` or `3306` are already in use on the host, override them with `APP_PORT` and `DB_PORT`.
 
 To run the app against an external MySQL address instead of the bundled `db` service:
 
 ```bash
-export DATABASE_URL="mysql://user:password@host:3306/database"
-docker compose -f compose.yml -f compose.external.yml up --build app
+export SOAP_EHR_DATABASE_URL="mysql://user:password@host:3306/soap_ehr"
+docker compose -f compose.yml up --build soap-ehr
 ```
 
 To test S3-compatible attachment storage locally, enable the RustFS override first:
@@ -114,20 +123,33 @@ cp compose.override.yml.bak compose.override.yml
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-If that external database already has the application tables and was not created by Prisma Migrate, baseline it once before the first deploy:
+To rebuild the synthetic V1 fixture locally:
 
 ```bash
-pnpm prisma:migrate:resolve --applied 20260322000000_init
-pnpm prisma:migrate:deploy
+V1_DATABASE_URL="mysql://clinic:clinic@localhost:3306/fhir_soap_record" pnpm v1:migrate:deploy
+V1_DATABASE_URL="mysql://clinic:clinic@localhost:3306/fhir_soap_record" pnpm v1:fixture:seed
 ```
+
+To inspect, run, and independently verify a V1 -> V2 conversion:
+
+```bash
+V1_DATABASE_URL="mysql://clinic:clinic@localhost:3306/fhir_soap_record" DATABASE_URL="mysql://clinic:clinic@localhost:3306/soap_ehr" pnpm migrate:v1-to-v2 plan
+V1_DATABASE_URL="mysql://clinic:clinic@localhost:3306/fhir_soap_record" DATABASE_URL="mysql://clinic:clinic@localhost:3306/soap_ehr" pnpm migrate:v1-to-v2 run
+V1_DATABASE_URL="mysql://clinic:clinic@localhost:3306/fhir_soap_record" DATABASE_URL="mysql://clinic:clinic@localhost:3306/soap_ehr" pnpm migrate:v1-to-v2 verify
+```
+
+See the [migration runbook](docs/migration/README.md) before a real cutover.
 
 ## Environment Variables
 
-- `DATABASE_URL`: MySQL connection string used by Prisma Client
+- `DATABASE_URL`: V2 runtime connection string used by Prisma Client
+- `SOAP_EHR_DATABASE_URL`: optional Compose override for the V2 runtime database
+- `V1_DATABASE_URL`: migration-tool connection string; the application runtime never reads it
 - `APP_PORT`: host port published for the web app in Docker Compose
 - `APP_URL`: external base URL used in generated docs and examples
 - `DB_PORT`: host port published for MySQL in Docker Compose
-- `DB_NAME`: database name created by the bundled MySQL container
+- `SOAP_EHR_DB_NAME`: V2 database name, default `soap_ehr`
+- `V1_DB_NAME`: V1 fixture/source database name, default `fhir_soap_record`
 - `DB_USER`: application user created by the bundled MySQL container
 - `DB_PASS`: password used by the bundled MySQL container and default local `DATABASE_URL`
 - `PORT`: Node application port
@@ -157,7 +179,7 @@ Practical rule:
 - run `pnpm prisma:generate` after schema changes
 - create new schema changes with `pnpm prisma:migrate:dev --name <migration-name>`
 - apply committed migrations with `pnpm prisma:migrate:deploy`
-- when adopting an existing external schema, mark the initial migration as applied before deploying further changes
+- never point `DATABASE_URL` at the V1 database; the two migration histories are intentionally isolated
 
 ## Create a User and Token
 
