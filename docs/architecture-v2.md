@@ -57,6 +57,14 @@ FHIR resources are projections, never a second clinical source of truth:
 
 FHIR imports are normalized into a validated composition before commit.
 
+## OMOP boundary
+
+OMOP CDM 5.4.2 is a one-way, read-only projection inside the V2 PostgreSQL
+database. The batch ETL
+resolves patient merges, creates people/providers/visits/observation periods and
+preserves each canonical composition in `NOTE`. It does not reinterpret free
+SOAP prose as coded conditions or measurements. See [`omop.md`](omop.md).
+
 ## Database isolation
 
 V1 and V2 use different engines during migration:
@@ -67,8 +75,14 @@ soap-ehr-db-legacy (MySQL)
 
 soap-ehr-db (PostgreSQL)
 └── soap_ehr
-    └── public        V2 canonical runtime
+    ├── public        V2 canonical runtime
+    ├── omop          derived OMOP CDM
+    └── soap_ehr_etl ETL provenance and stable source mappings
 ```
+
+OMOP shares the PostgreSQL server and database but not the canonical tables. It
+is outside the clinical transaction path and remains safe to rebuild from
+`public`.
 
 The V1 migration history and deterministic synthetic fixture live under
 `docs/migration/v1/`. Active Prisma migrations contain only the clean V2 initial

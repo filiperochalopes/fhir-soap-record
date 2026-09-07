@@ -20,7 +20,7 @@ verified MySQL dump -> restored MySQL V1 -> semantic converter -> PostgreSQL V2
 ```
 
 The cutover command retains a raw MySQL safety dump and creates a
-PostgreSQL-native dump of the canonical schema. Database
+PostgreSQL-native dump containing the canonical, OMOP and ETL schemas. Database
 backups do not contain attachment objects; back up the configured S3-compatible
 bucket separately.
 
@@ -36,7 +36,7 @@ pnpm migrate:mysql-to-postgres
 
 The command stops application writes, exposes the existing MySQL volume through
 `soap-ehr-db-legacy`, creates both dumps, provisions PostgreSQL, converts and
-verifies V2, and starts the application. `soap-ehr-db` keeps the
+verifies V2, refreshes OMOP, and starts the application. `soap-ehr-db` keeps the
 address the application already uses; only its database engine changes.
 
 Set `MIGRATION_BACKUP_DIR=/secure/path` to choose the output directory. The

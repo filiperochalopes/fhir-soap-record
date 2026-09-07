@@ -4,7 +4,7 @@
 
 - openEHR-inspired archetypes, operational templates, compositions and versioning are the canonical clinical persistence model;
 - FHIR remains the interoperability API and import/export surface;
-- OMOP CDM will be a derived, read-only analytical projection in the next phase.
+- OMOP CDM 5.4.2 is a derived, read-only PostgreSQL analytical projection.
 
 The application is intentionally narrow:
 
@@ -25,7 +25,7 @@ The implementation stays as a single full-stack monolith and follows `YAGNI`, `D
 - React + TypeScript
 - Node.js
 - Prisma ORM
-- PostgreSQL for the canonical EHR; MySQL only as the V1 migration source
+- PostgreSQL for the canonical EHR and OMOP analytics; MySQL only as the V1 migration source
 - Tailwind CSS
 - OpenAPI + Swagger UI
 - Docker Compose
@@ -57,7 +57,7 @@ flowchart LR
   CompositionVersion -. projects to .-> FHIRComposition[FHIR Composition]
   CompositionVersion -. projects to .-> FHIRObservation[FHIR Observation]
   CompositionVersion -. projects to .-> FHIRCondition[FHIR Condition]
-  CompositionVersion -. future ETL .-> OMOP[OMOP CDM 5.4]
+  CompositionVersion -. snapshot ETL .-> OMOP[OMOP CDM 5.4.2]
 ```
 
 ## Local Run
@@ -100,21 +100,28 @@ Use Docker Compose for the PostgreSQL V2 database and the Node monolith:
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-The default stack is the application runtime only. The legacy MySQL source is
-optional and lives behind a Compose profile:
+The default stack is the application runtime only. The legacy MySQL source and
+the OMOP projection are optional and live behind Compose profiles:
 
 ```bash
+# add the OMOP CDM schema
+docker compose -f compose.yml -f compose.dev.yml --profile omop up -d
+
+# add the stale V1 MySQL source
 docker compose -f compose.yml -f compose.dev.yml --profile legacy up -d
 ```
 
 The database services are deliberately named by lifecycle:
 
 - `soap-ehr-db`: PostgreSQL 17 database `soap_ehr`, containing the canonical
-  runtime in `public`;
+  runtime in `public`, OMOP CDM in `omop`, and ETL metadata in `soap_ehr_etl`;
 - `soap-ehr-db-legacy`: MySQL 8.4 database `fhir_soap_record`, retained only as
   the V1 fixture/source and never read by the application runtime.
 
-The `soap-ehr` service applies only the PostgreSQL V2 Prisma migrations.
+The `soap-ehr` service applies only the PostgreSQL V2 Prisma migrations. The
+`soap-ehr-omop-init` service, under the `omop` profile, installs the pinned
+39-table CDM 5.4.2 schema in the same database; see the
+[OMOP runbook](docs/omop.md). The application never requires it to start.
 
 If ports `3000`, `5438` or `3306` are already in use, override them with
 `APP_PORT`, `DB_PORT` and `LEGACY_DB_PORT` respectively.
@@ -135,8 +142,8 @@ pnpm migrate:mysql-to-postgres
 
 It stops the old app, reattaches its MySQL volume as `soap-ehr-db-legacy`, makes
 a safety dump, creates `soap-ehr-db` as PostgreSQL, migrates and verifies V2,
-creates a PostgreSQL recovery dump, and starts the app against the new
-database. Backups are written under `backups/`; MySQL is not deleted.
+builds OMOP, creates a PostgreSQL recovery dump, and starts the app against the
+new database. Backups are written under `backups/`; MySQL is not deleted.
 
 Exercise the same command against the local development Compose with:
 
@@ -150,6 +157,7 @@ See the [migration runbook](docs/migration/README.md) before a real cutover.
 
 - `DATABASE_URL`: V2 runtime connection string used by Prisma Client
 - `V1_DATABASE_URL`: migration-tool connection string; the application runtime never reads it
+- `OMOP_DATABASE_URL`: ETL connection to the same PostgreSQL database; OMOP uses separate schemas
 - `APP_PORT`: host port published for the web app in Docker Compose
 - `APP_URL`: external base URL used in generated docs and examples
 - `DB_PORT`: host port published for PostgreSQL, default `5438`

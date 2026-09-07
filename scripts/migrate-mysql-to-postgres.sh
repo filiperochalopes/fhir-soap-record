@@ -29,8 +29,10 @@ echo "[3/7] Creating verified MySQL safety backup"
 SOAP_EHR_COMPOSE_FILE="$compose_path" \
   sh scripts/backup-v1-mysql.sh "$v1_backup"
 
-echo "[4/7] Starting PostgreSQL"
-docker compose -f "$compose_path" up -d soap-ehr-db
+echo "[4/7] Starting PostgreSQL with canonical and OMOP schemas"
+docker compose -f "$compose_path" up -d \
+  soap-ehr-db \
+  soap-ehr-omop-init
 
 echo "[5/7] Converting and verifying MySQL V1 into PostgreSQL V2"
 docker compose -f "$compose_path" --profile migration run --rm --build \
@@ -38,7 +40,9 @@ docker compose -f "$compose_path" --profile migration run --rm --build \
 docker compose -f "$compose_path" --profile migration run --rm \
   soap-ehr-migration pnpm migrate:v1-to-v2 run
 
-echo "[6/7] Creating the PostgreSQL recovery dump"
+echo "[6/7] Building and verifying the OMOP projection"
+docker compose -f "$compose_path" --profile migration run --rm \
+  soap-ehr-migration pnpm omop:etl run
 SOAP_EHR_COMPOSE_FILE="$compose_path" \
   sh scripts/backup-v2-postgres.sh "$v2_backup"
 
