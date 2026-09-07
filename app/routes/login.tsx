@@ -60,7 +60,8 @@ export default function LoginRoute() {
           </h1>
           <p className="mt-4 max-w-lg text-sm leading-6 text-[color:var(--muted)]">
             openEHR-inspired canonical compositions power the clinical workflow,
-            FHIR exposes interoperability APIs, and OMOP is the analytical roadmap.
+            FHIR exposes interoperability APIs, and OMOP CDM is the derived
+            analytical projection.
           </p>
         </div>
         <div className="px-8 py-10">
