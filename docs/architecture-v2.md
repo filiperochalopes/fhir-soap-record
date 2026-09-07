@@ -59,11 +59,15 @@ FHIR imports are normalized into a validated composition before commit.
 
 ## Database isolation
 
-The same MySQL service contains two databases during development and migration:
+V1 and V2 use different engines during migration:
 
 ```text
-fhir_soap_record  V1 source/fixture; stale and never opened by the V2 runtime
-soap_ehr          V2 canonical runtime database
+soap-ehr-db-legacy (MySQL)
+└── fhir_soap_record  V1 source/fixture; stale and migration-only
+
+soap-ehr-db (PostgreSQL)
+└── soap_ehr
+    └── public        V2 canonical runtime
 ```
 
 The V1 migration history and deterministic synthetic fixture live under

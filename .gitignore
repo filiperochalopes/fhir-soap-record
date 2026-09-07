@@ -13,9 +13,12 @@ dist
 docker-compose.override.yml
 compose.override.yml
 data/
+backups/
 *.zip
 *.sql
 !prisma/migrations/**/migration.sql
+!docs/migration/**/*.sql
+!omop/schema/**/*.sql
 import/*
 !import/.keep
 !import/tools/

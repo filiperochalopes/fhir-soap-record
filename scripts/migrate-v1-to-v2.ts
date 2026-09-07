@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Prisma } from "@prisma/client";
 import mysql, { type RowDataPacket } from "mysql2/promise";
+import { Client, types as pgTypes } from "pg";
 
 import {
   createNarrativeComposition,
@@ -12,12 +13,18 @@ import { prisma } from "../app/lib/prisma.server";
 import type { NarrativeSection } from "../app/lib/narrative-notes";
 
 type V1Row = RowDataPacket & Record<string, unknown>;
+type PostgreSqlRow = Record<string, unknown>;
 type MigrationCommand = "plan" | "run" | "verify";
 
 const V1_SOAP_SOURCE = "soap-ehr-v1:SoapNote";
 const V1_NARRATIVE_SOURCE = "soap-ehr-v1:NarrativeNote";
-const MIGRATION_STARTED_ID = 2_000_000_001;
-const MIGRATION_COMPLETED_ID = 2_000_000_002;
+const MIGRATION_STARTED_ID = -1;
+const MIGRATION_COMPLETED_ID = -2;
+
+// Prisma and the V1 reader treat historical timezone-less values as UTC wall
+// time. Keep raw PostgreSQL verification queries on the same convention.
+pgTypes.setTypeParser(1082, (value) => new Date(`${value}T00:00:00.000Z`));
+pgTypes.setTypeParser(1114, (value) => new Date(`${value.replace(" ", "T")}Z`));
 
 function requiredUrl(name: "DATABASE_URL" | "V1_DATABASE_URL") {
   const value = process.env[name]?.trim();
@@ -34,6 +41,12 @@ function databaseName(url: string) {
 function assertSeparateDatabases(v1Url: string, v2Url: string) {
   const v1 = new URL(v1Url);
   const v2 = new URL(v2Url);
+  if (v1.protocol !== "mysql:") {
+    throw new Error("V1_DATABASE_URL must point to the legacy MySQL database.");
+  }
+  if (!["postgres:", "postgresql:"].includes(v2.protocol)) {
+    throw new Error("DATABASE_URL must point to the V2 PostgreSQL database.");
+  }
   if (v1.host === v2.host && databaseName(v1Url) === databaseName(v2Url)) {
     throw new Error("V1_DATABASE_URL and DATABASE_URL must point to different databases.");
   }
@@ -93,6 +106,15 @@ function narrativeSections(value: unknown): NarrativeSection[] {
 async function queryRows(connection: mysql.Connection, sql: string) {
   const [rows] = await connection.query<V1Row[]>(sql);
   return rows;
+}
+
+async function queryPostgreSqlRows(
+  connection: Client,
+  sql: string,
+  values: readonly unknown[] = [],
+) {
+  const result = await connection.query<PostgreSqlRow>(sql, [...values]);
+  return result.rows;
 }
 
 async function scalarCount(connection: mysql.Connection, table: string) {
@@ -553,7 +575,11 @@ function canonicalSqlValue(value: unknown): unknown {
   return value;
 }
 
-function normalizedSqlRows(rows: V1Row[], jsonColumns: readonly string[]) {
+function normalizedSqlRows(
+  rows: Array<Record<string, unknown>>,
+  jsonColumns: readonly string[],
+  booleanColumns: readonly string[] = [],
+) {
   return rows.map((row) => {
     const normalized = { ...row } as Record<string, unknown>;
     for (const column of jsonColumns) {
@@ -561,13 +587,16 @@ function normalizedSqlRows(rows: V1Row[], jsonColumns: readonly string[]) {
         normalized[column] = JSON.parse(normalized[column]);
       }
     }
+    for (const column of booleanColumns) {
+      normalized[column] = Boolean(normalized[column]);
+    }
     return canonicalSqlValue(normalized);
   });
 }
 
 async function operationalDataDigests(
   sourceConnection: mysql.Connection,
-  targetConnection: mysql.Connection,
+  targetConnection: Client,
 ) {
   const commonAttachmentColumns = [
     "id",
@@ -584,9 +613,9 @@ async function operationalDataDigests(
     "s3_key",
     "created_at",
     "updated_at",
-  ].map((column) => `\`${column}\``).join(", ");
+  ];
   const specs = [
-    { table: "Patient", jsonColumns: [] },
+    { table: "Patient", jsonColumns: [], booleanColumns: ["is_draft", "active"] },
     { table: "Contact", jsonColumns: [] },
     { table: "ContactPoint", jsonColumns: [] },
     { table: "Identifier", jsonColumns: [] },
@@ -595,10 +624,10 @@ async function operationalDataDigests(
       table: "GeneralSetting",
       jsonColumns: [],
       targetWhere:
-        "WHERE `property` NOT IN ('migration.v1.startedAt', 'migration.v1.completedAt')",
+        "WHERE \"property\" NOT IN ('migration.v1.startedAt', 'migration.v1.completedAt')",
     },
-    { table: "AuthUser", jsonColumns: [] },
-    { table: "AuthToken", jsonColumns: [] },
+    { table: "AuthUser", jsonColumns: [], booleanColumns: ["is_active"] },
+    { table: "AuthToken", jsonColumns: [], booleanColumns: ["is_active"] },
     { table: "EncounterDraft", jsonColumns: [] },
     {
       table: "ClinicalAttachment",
@@ -611,18 +640,26 @@ async function operationalDataDigests(
   ] as const;
   const results: Record<string, { source: string; target: string }> = {};
   for (const spec of specs) {
-    const columns = "columns" in spec ? spec.columns : "*";
+    const columnNames = "columns" in spec ? spec.columns : null;
+    const sourceColumns = columnNames
+      ? columnNames.map((column) => `\`${column}\``).join(", ")
+      : "*";
+    const targetColumns = columnNames
+      ? columnNames.map((column) => `\"${column}\"`).join(", ")
+      : "*";
     const sourceRows = await queryRows(
       sourceConnection,
-      `SELECT ${columns} FROM \`${spec.table}\` ORDER BY \`id\``,
+      `SELECT ${sourceColumns} FROM \`${spec.table}\` ORDER BY \`id\``,
     );
-    const targetRows = await queryRows(
+    const targetRows = await queryPostgreSqlRows(
       targetConnection,
-      `SELECT ${columns} FROM \`${spec.table}\` ${"targetWhere" in spec ? spec.targetWhere : ""} ORDER BY \`id\``,
+      `SELECT ${targetColumns} FROM \"${spec.table}\" ${"targetWhere" in spec ? spec.targetWhere : ""} ORDER BY \"id\"`,
     );
+    const booleanColumns =
+      "booleanColumns" in spec ? spec.booleanColumns : [];
     results[spec.table] = {
-      source: digest(normalizedSqlRows(sourceRows, spec.jsonColumns)),
-      target: digest(normalizedSqlRows(targetRows, spec.jsonColumns)),
+      source: digest(normalizedSqlRows(sourceRows, spec.jsonColumns, booleanColumns)),
+      target: digest(normalizedSqlRows(targetRows, spec.jsonColumns, booleanColumns)),
     };
   }
 
@@ -632,9 +669,10 @@ async function operationalDataDigests(
   );
   const sourceAuditIds = sourceAuditRows.map((row) => asNumber(row.id));
   const targetAuditRows = sourceAuditIds.length
-    ? await queryRows(
+    ? await queryPostgreSqlRows(
         targetConnection,
-        `SELECT * FROM \`AuditLog\` WHERE \`id\` IN (${sourceAuditIds.join(",")}) ORDER BY \`id\``,
+        `SELECT * FROM \"AuditLog\" WHERE \"id\" = ANY($1::integer[]) ORDER BY \"id\"`,
+        [sourceAuditIds],
       )
     : [];
   results.AuditLog = {
@@ -716,7 +754,7 @@ async function clinicalTargetDigest() {
 
 async function verifyMigration(
   sourceConnection: mysql.Connection,
-  targetConnection: mysql.Connection,
+  targetConnection: Client,
 ) {
   const source = await sourceCounts(sourceConnection);
   const target = await targetCounts();
@@ -802,7 +840,7 @@ async function verifyMigration(
 
 async function runMigration(
   sourceConnection: mysql.Connection,
-  targetConnection: mysql.Connection,
+  targetConnection: Client,
 ) {
   await assertTargetReadyForRun();
   await prisma.generalSetting.upsert({
@@ -815,8 +853,10 @@ async function runMigration(
     update: {},
   });
   await copyOperationalData(sourceConnection);
+  await resetPostgreSqlSequences(targetConnection);
   await migrateClinicalData(sourceConnection);
   await copyAttachments(sourceConnection);
+  await resetPostgreSqlSequences(targetConnection);
   const report = await verifyMigration(sourceConnection, targetConnection);
   await prisma.generalSetting.upsert({
     where: { property: "migration.v1.completedAt" },
@@ -828,6 +868,34 @@ async function runMigration(
     update: { value: new Date().toISOString() },
   });
   return report;
+}
+
+async function resetPostgreSqlSequences(connection: Client) {
+  const tables = [
+    "Patient",
+    "Contact",
+    "ContactPoint",
+    "Identifier",
+    "Appointment",
+    "GeneralSetting",
+    "AuthUser",
+    "AuthToken",
+    "EncounterDraft",
+    "ClinicalAttachment",
+    "AttachmentPluginExecution",
+    "UserPluginCredential",
+    "ClinicalDocumentWebhookEvent",
+    "AuditLog",
+  ] as const;
+  for (const table of tables) {
+    await connection.query(
+      `SELECT setval(
+         pg_get_serial_sequence('\"${table}\"', 'id'),
+         GREATEST(COALESCE(MAX(\"id\"), 0), 1),
+         MAX(\"id\") IS NOT NULL
+       ) FROM \"${table}\"`,
+    );
+  }
 }
 
 async function main() {
@@ -842,7 +910,8 @@ async function main() {
   // V1 wall-clock values as UTC avoids shifting every historical timestamp by
   // the machine's local timezone during conversion.
   const sourceConnection = await mysql.createConnection({ uri: v1Url, timezone: "Z" });
-  const targetConnection = await mysql.createConnection({ uri: v2Url, timezone: "Z" });
+  const targetConnection = new Client({ connectionString: v2Url });
+  await targetConnection.connect();
   try {
     if (command === "plan") {
       console.log(

@@ -1,9 +1,10 @@
 name: soap-ehr
 
 services:
-  soap-ehr-db:
+  soap-ehr-db-legacy:
+    profiles: ["legacy", "migration"]
     image: mysql:8.4
-    container_name: soap-ehr-db
+    container_name: soap-ehr-db-legacy
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -14,37 +15,80 @@ services:
       - data
     environment:
       MYSQL_DATABASE: ${V1_DB_NAME:-fhir_soap_record}
-      MYSQL_ROOT_PASSWORD: ${DB_PASS:-clinic}
-      MYSQL_USER: ${DB_USER:-clinic}
-      MYSQL_PASSWORD: ${DB_PASS:-clinic}
+      MYSQL_ROOT_PASSWORD: ${LEGACY_DB_PASS:-${DB_PASS:-clinic}}
+      MYSQL_USER: ${LEGACY_DB_USER:-clinic}
+      MYSQL_PASSWORD: ${LEGACY_DB_PASS:-${DB_PASS:-clinic}}
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASS:-clinic}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${LEGACY_DB_PASS:-${DB_PASS:-clinic}}"]
       interval: 10s
       timeout: 5s
       retries: 10
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "${LEGACY_DB_PORT:-3306}:3306"
+    # Preserve the existing MySQL files while the renamed service becomes
+    # read-only/stale after production cutover.
     volumes:
       - ./data/db:/var/lib/mysql
 
-  soap-ehr-db-init:
+  soap-ehr-db-legacy-init:
+    profiles: ["legacy", "migration"]
     image: mysql:8.4
     restart: "no"
     networks:
       - data
     depends_on:
+      soap-ehr-db-legacy:
+        condition: service_healthy
+    environment:
+      DB_HOST: soap-ehr-db-legacy
+      DB_ROOT_PASSWORD: ${LEGACY_DB_PASS:-${DB_PASS:-clinic}}
+      DB_USER: ${LEGACY_DB_USER:-clinic}
+      MYSQL_PWD: ${LEGACY_DB_PASS:-${DB_PASS:-clinic}}
+      V1_DB_NAME: ${V1_DB_NAME:-fhir_soap_record}
+    entrypoint: ["/bin/sh", "/scripts/ensure-v1-legacy-database.sh"]
+    volumes:
+      - ./scripts/ensure-v1-legacy-database.sh:/scripts/ensure-v1-legacy-database.sh:ro
+
+  soap-ehr-db:
+    image: postgres:17-alpine
+    container_name: soap-ehr-db
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - data
+    environment:
+      POSTGRES_DB: ${SOAP_EHR_DB_NAME:-soap_ehr}
+      POSTGRES_USER: ${DB_USER:-clinic}
+      POSTGRES_PASSWORD: ${DB_PASS:-clinic}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-clinic} -d ${SOAP_EHR_DB_NAME:-soap_ehr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${DB_PORT:-5438}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  soap-ehr-migration:
+    profiles: ["migration"]
+    build:
+      context: .
+      target: migration
+    networks:
+      - data
+    depends_on:
+      soap-ehr-db-legacy-init:
+        condition: service_completed_successfully
       soap-ehr-db:
         condition: service_healthy
     environment:
-      DB_HOST: soap-ehr-db
-      DB_ROOT_PASSWORD: ${DB_PASS:-clinic}
-      DB_USER: ${DB_USER:-clinic}
-      MYSQL_PWD: ${DB_PASS:-clinic}
-      SOAP_EHR_DB_NAME: ${SOAP_EHR_DB_NAME:-soap_ehr}
-      V1_DB_NAME: ${V1_DB_NAME:-fhir_soap_record}
-    entrypoint: ["/bin/sh", "/scripts/ensure-soap-ehr-databases.sh"]
-    volumes:
-      - ./scripts/ensure-soap-ehr-databases.sh:/scripts/ensure-soap-ehr-databases.sh:ro
+      DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
+      V1_DATABASE_URL: mysql://${LEGACY_DB_USER:-clinic}:${LEGACY_DB_PASS:-${DB_PASS:-clinic}}@soap-ehr-db-legacy:3306/${V1_DB_NAME:-fhir_soap_record}
 
   soap-ehr:
     build:
@@ -61,8 +105,8 @@ services:
       - internal
       - data
     depends_on:
-      soap-ehr-db-init:
-        condition: service_completed_successfully
+      soap-ehr-db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/login"]
       interval: 30s
@@ -70,8 +114,8 @@ services:
       retries: 3
       start_period: 30s
     environment:
-      DATABASE_URL: ${SOAP_EHR_DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${SOAP_EHR_DB_NAME:-soap_ehr}}
-      V1_DATABASE_URL: ${V1_DATABASE_URL:-mysql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:3306/${V1_DB_NAME:-fhir_soap_record}}
+      DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
+      V1_DATABASE_URL: ${V1_DATABASE_URL:-mysql://${LEGACY_DB_USER:-clinic}:${LEGACY_DB_PASS:-${DB_PASS:-clinic}}@soap-ehr-db-legacy:3306/${V1_DB_NAME:-fhir_soap_record}}
       APP_URL: ${APP_URL:-http://localhost:3000}
       API_DRY_RUN: ${API_DRY_RUN:-false}
       COOKIE_NAME: clinic_token
