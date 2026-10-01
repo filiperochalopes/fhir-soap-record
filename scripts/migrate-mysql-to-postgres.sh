@@ -3,6 +3,8 @@
 set -eu
 
 compose_path="${SOAP_EHR_COMPOSE_FILE:-compose.yml}"
+legacy_app_container="${LEGACY_APP_CONTAINER:-fhir-soap-record}"
+legacy_db_container="${LEGACY_DB_CONTAINER:-fhir-soap-record-db}"
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir="${MIGRATION_BACKUP_DIR:-backups/mysql-to-postgres-${timestamp}}"
 v1_backup="${backup_dir}/fhir-soap-record-v1-mysql.sql"
@@ -16,9 +18,23 @@ on_exit() {
 }
 trap on_exit EXIT HUP INT TERM
 
+stop_required_container() {
+  container="$1"
+  running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null) || {
+    echo "Required legacy container is missing: $container" >&2
+    exit 1
+  }
+  if [ "$running" = "true" ]; then
+    echo "Stopping legacy container $container"
+    docker stop "$container" >/dev/null
+  fi
+}
+
 echo "[1/7] Stopping application writes"
 docker compose -f "$compose_path" stop soap-ehr >/dev/null 2>&1 || true
 docker compose -f "$compose_path" stop soap-ehr-db >/dev/null 2>&1 || true
+stop_required_container "$legacy_app_container"
+stop_required_container "$legacy_db_container"
 
 echo "[2/7] Starting renamed MySQL legacy service"
 docker compose -f "$compose_path" up -d \
