@@ -20,7 +20,9 @@ services:
       MYSQL_PASSWORD: ${LEGACY_DB_PASS:-${DB_PASS:-clinic}}
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${LEGACY_DB_PASS:-${DB_PASS:-clinic}}"]
-      interval: 10s
+      # Matches the production V1 database setting and avoids unnecessary probes
+      # while the retained legacy source is only used during migration.
+      interval: 60s
       timeout: 5s
       retries: 10
     ports:

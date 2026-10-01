@@ -60,6 +60,44 @@ flowchart LR
   CompositionVersion -. snapshot ETL .-> OMOP[OMOP CDM 5.4.2]
 ```
 
+## Modelo informacional openEHR (resumo)
+
+> [!NOTE]
+> ### 🧩 Arquétipos e templates usados no registro clínico
+> O `soap-ehr` usa um **núcleo inspirado no openEHR**: a `COMPOSITION` é o
+> documento clínico versionado; os arquétipos definem o tipo de cada parte; e o
+> template decide quais partes são obrigatórias em cada formulário. Este não é
+> um servidor openEHR de conformidade completa: não há processamento de
+> ADL/OPT, AQL ou todo o Reference Model.
+>
+> ```mermaid
+> flowchart TD
+>   C["COMPOSITION<br/>openEHR-EHR-COMPOSITION.encounter.v1<br/><i>consulta / documento clínico</i>"]
+>   C --> S["SOAP template<br/>soap-ehr.template.encounter-soap.v1"]
+>   C --> N["Narrative template<br/>soap-ehr.template.encounter-narrative.v1"]
+>   S --> S1["at0001 · Subjective<br/>OBSERVATION · story.v1"]
+>   S --> S2["at0002 · Objective<br/>OBSERVATION · clinical_exam.v1"]
+>   S --> S3["at0003 · Assessment<br/>EVALUATION · clinical_assessment.v1"]
+>   S --> S4["at0004 · Plan<br/>EVALUATION · care_plan.v1"]
+>   N --> N1["Seções repetíveis<br/>EVALUATION · clinical_narrative.v1"]
+> ```
+>
+> | Arquétipo | Tipo RM | Onde é usado | Conteúdo simplificado |
+> | --- | --- | --- | --- |
+> | `openEHR-EHR-COMPOSITION.encounter.v1` | `COMPOSITION` | Raiz dos dois templates | Uma consulta/documento clínico, com autor, data, contexto e seções. |
+> | `openEHR-EHR-OBSERVATION.story.v1` | `OBSERVATION` | SOAP → Subjective (`at0001`) | Relato e história informados pelo paciente. |
+> | `openEHR-EHR-OBSERVATION.clinical_exam.v1` | `OBSERVATION` | SOAP → Objective (`at0002`) | Achados objetivos do exame clínico. |
+> | `openEHR-EHR-EVALUATION.clinical_assessment.v1` | `EVALUATION` | SOAP → Assessment (`at0003`) | Avaliação/interpretação clínica. |
+> | `openEHR-EHR-EVALUATION.care_plan.v1` | `EVALUATION` | SOAP → Plan (`at0004`) | Plano de cuidado em texto livre: condutas, orientações, prescrições, retornos ou solicitações. |
+> | `openEHR-EHR-EVALUATION.clinical_narrative.v1` | `EVALUATION` | Nota narrativa → seções repetíveis | Texto clínico livre organizado em uma ou mais seções. |
+>
+> **Como ler a estrutura:** `COMPOSITION` contém `SECTION`; cada `SECTION`
+> contém uma `OBSERVATION` ou `EVALUATION`; o texto é armazenado em um
+> `ITEM_TREE` com um `ELEMENT` (`DV_TEXT`). Nas `OBSERVATION`, o texto fica em
+> `HISTORY → POINT_EVENT → ITEM_TREE`; nas `EVALUATION`, fica diretamente em
+> `ITEM_TREE`. A composição validada é salva como uma versão imutável e é a fonte
+> canônica para as projeções FHIR e OMOP.
+
 ## Local Run
 
 1. Install dependencies.

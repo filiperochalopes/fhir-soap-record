@@ -32,6 +32,30 @@ test("SOAP operational template builds a valid four-section composition", () => 
   );
 });
 
+test("SOAP operational template preserves empty legacy section values", () => {
+  const composition = buildSoapComposition({
+    assessment: "",
+    authorId: 7,
+    authorName: "Dra. Teste",
+    encounteredAt,
+    objective: "Objective text",
+    patientName: "Patient Test",
+    plan: "",
+    subjective: "",
+  });
+
+  assert.doesNotThrow(() => compositionSchema.parse(composition));
+  assert.deepEqual(
+    compositionNarrativeSections(composition).map(({ nodeId, text }) => ({ nodeId, text })),
+    [
+      { nodeId: SOAP_NODE_IDS.subjective, text: "" },
+      { nodeId: SOAP_NODE_IDS.objective, text: "Objective text" },
+      { nodeId: SOAP_NODE_IDS.assessment, text: "" },
+      { nodeId: SOAP_NODE_IDS.plan, text: "" },
+    ],
+  );
+});
+
 test("narrative template preserves section order and text", () => {
   const composition = buildNarrativeComposition({
     authorId: 7,

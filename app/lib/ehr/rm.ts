@@ -5,11 +5,18 @@ const dvTextSchema = z.object({
   value: z.string().min(1),
 });
 
+// V1 SOAP sections are persisted as TEXT and may be intentionally blank.
+// Preserve those historical values in an ELEMENT while keeping all structural
+// labels (composition, section, and entry names) non-empty.
+const dvTextValueSchema = dvTextSchema.extend({
+  value: z.string(),
+});
+
 const elementSchema = z.object({
   _type: z.literal("ELEMENT"),
   archetype_node_id: z.string().min(1),
   name: dvTextSchema,
-  value: dvTextSchema,
+  value: dvTextValueSchema,
 });
 
 const itemTreeSchema = z.object({
@@ -134,7 +141,7 @@ export function compositionNarrativeSections(composition: EhrComposition) {
           ? entry.data.events[0]?.data
           : entry.data;
       const value = tree?.items[0]?.value.value;
-      return value
+      return typeof value === "string"
         ? [{
             nodeId: section.archetype_node_id,
             text: value,
