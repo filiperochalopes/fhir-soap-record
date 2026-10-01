@@ -110,9 +110,9 @@ services:
       soap-ehr-omop-init:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
-      OMOP_DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
-      V1_DATABASE_URL: mysql://${LEGACY_DB_USER:-clinic}:${LEGACY_DB_PASS:-${DB_PASS:-clinic}}@soap-ehr-db-legacy:3306/${V1_DB_NAME:-fhir_soap_record}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      OMOP_DATABASE_URL: ${OMOP_DATABASE_URL:?OMOP_DATABASE_URL must be set}
+      V1_DATABASE_URL: ${V1_DATABASE_URL:?V1_DATABASE_URL must be set}
 
   soap-ehr:
     build:
@@ -138,9 +138,9 @@ services:
       retries: 3
       start_period: 30s
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
-      OMOP_DATABASE_URL: postgresql://${DB_USER:-clinic}:${DB_PASS:-clinic}@soap-ehr-db:5432/${SOAP_EHR_DB_NAME:-soap_ehr}
-      V1_DATABASE_URL: ${V1_DATABASE_URL:-mysql://${LEGACY_DB_USER:-clinic}:${LEGACY_DB_PASS:-${DB_PASS:-clinic}}@soap-ehr-db-legacy:3306/${V1_DB_NAME:-fhir_soap_record}}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      OMOP_DATABASE_URL: ${OMOP_DATABASE_URL:?OMOP_DATABASE_URL must be set}
+      V1_DATABASE_URL: ${V1_DATABASE_URL:?V1_DATABASE_URL must be set}
       APP_URL: ${APP_URL:-http://localhost:3000}
       API_DRY_RUN: ${API_DRY_RUN:-false}
       COOKIE_NAME: clinic_token
