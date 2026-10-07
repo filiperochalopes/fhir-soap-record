@@ -22,7 +22,7 @@ export function ClinicalHistory(props: { notes: ClinicalHistoryItem[]; timeZone:
       <summary className="cursor-pointer list-none text-lg font-semibold">
         Previous records ({props.notes.length})
       </summary>
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
         {props.notes.length ? (
           props.notes.map((note) => (
             <article
