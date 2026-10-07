@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Form, Link, NavLink, Outlet, useFetcher, useLoaderData } from "react-router";
 
 import { ToastProvider } from "~/components/toast";
@@ -16,9 +17,9 @@ type LoaderData = {
 };
 
 const links = [
-  { label: "Patients", to: "/patients" },
-  { label: "Agenda", to: "/agenda" },
-];
+  { labelKey: "appShell.navPatients", to: "/patients" },
+  { labelKey: "appShell.navAgenda", to: "/agenda" },
+] as const;
 
 function EyeIcon() {
   return (
@@ -63,6 +64,7 @@ function EyeOffIcon() {
 }
 
 export function AppShell() {
+  const { t } = useTranslation();
   const { patientPersonalDataPrivacy, user } = useLoaderData() as LoaderData;
   const privacyFetcher = useFetcher();
   const currentYear = new Date().getFullYear();
@@ -77,10 +79,10 @@ export function AppShell() {
               soap-ehr
             </Link>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-              openEHR-inspired records with FHIR interoperability
+              {t("appShell.tagline")}
             </h1>
             <p className="mt-1 text-sm text-[color:var(--muted)]">
-              {user.fullName} · CRM {user.crm}/{user.crmUf}
+              {t("appShell.userLine", { crm: user.crm, crmUf: user.crmUf, name: user.fullName })}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -94,14 +96,14 @@ export function AppShell() {
                 <button
                   aria-label={
                     patientPersonalDataPrivacy.visible
-                      ? "Hide patient personal data"
-                      : "Show patient personal data"
+                      ? t("appShell.hidePersonalData")
+                      : t("appShell.showPersonalData")
                   }
                   className="button-secondary h-11 w-11 rounded-full p-0"
                   title={
                     patientPersonalDataPrivacy.visible
-                      ? "Hide patient personal data"
-                      : "Show patient personal data"
+                      ? t("appShell.hidePersonalData")
+                      : t("appShell.showPersonalData")
                   }
                   type="submit"
                 >
@@ -110,9 +112,9 @@ export function AppShell() {
               </privacyFetcher.Form>
             ) : null}
             <Link
-              aria-label="Settings"
+              aria-label={t("appShell.settings")}
               className="button-secondary h-11 w-11 rounded-full p-0"
-              title="Settings"
+              title={t("appShell.settings")}
               to="/settings"
             >
               <svg
@@ -134,7 +136,7 @@ export function AppShell() {
             </Link>
             <Form action="/logout" method="post">
               <button className="button-secondary" type="submit">
-                Logout
+                {t("appShell.logout")}
               </button>
             </Form>
           </div>
@@ -151,7 +153,7 @@ export function AppShell() {
               }
               to={link.to}
             >
-              {link.label}
+              {t(link.labelKey)}
             </NavLink>
           ))}
         </nav>
@@ -162,7 +164,7 @@ export function AppShell() {
         <footer className="mt-10 border-t border-black/5 px-2 py-6 text-sm text-[color:var(--muted)] dark:border-white/10">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p>
-            Developed br{" "}
+            {t("appShell.footerDevelopedBy")}{" "}
             <a
               className="font-medium text-[color:var(--foreground)] transition hover:text-[color:var(--accent)]"
               href="https://link.orango.io/Iyqdm"
@@ -176,7 +178,7 @@ export function AppShell() {
           </p>
           <div className="flex items-center gap-4">
             <Link className="transition hover:text-[color:var(--accent)]" to="/docs">
-              Docs
+              {t("appShell.footerDocs")}
             </Link>
             <a
               className="transition hover:text-[color:var(--accent)]"
@@ -184,7 +186,7 @@ export function AppShell() {
               rel="noreferrer"
               target="_blank"
             >
-              Github
+              {t("appShell.footerGithub")}
             </a>
           </div>
         </div>

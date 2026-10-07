@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { formatDateTime } from "~/lib/utils";
 
 type HistorySection = {
@@ -17,10 +19,12 @@ export type ClinicalHistoryItem = {
 };
 
 export function ClinicalHistory(props: { notes: ClinicalHistoryItem[]; timeZone: string }) {
+  const { t } = useTranslation();
+
   return (
     <details className="panel p-5">
       <summary className="cursor-pointer list-none text-lg font-semibold">
-        Previous records ({props.notes.length})
+        {t("clinicalHistory.title", { count: props.notes.length })}
       </summary>
       <div className="mt-4 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
         {props.notes.length ? (
@@ -38,7 +42,7 @@ export function ClinicalHistory(props: { notes: ClinicalHistoryItem[]; timeZone:
                 </div>
                 <div className="text-right text-sm text-[color:var(--muted)]">
                   <div>{note.author.fullName}</div>
-                  <div>{note.kind === "soap" ? "SOAP" : "Narrative"}</div>
+                  <div>{note.kind === "soap" ? t("clinicalHistory.kindSoap") : t("clinicalHistory.kindNarrative")}</div>
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
@@ -53,7 +57,7 @@ export function ClinicalHistory(props: { notes: ClinicalHistoryItem[]; timeZone:
           ))
         ) : (
           <p className="text-sm text-[color:var(--muted)]">
-            No prior clinical records for this patient.
+            {t("clinicalHistory.empty")}
           </p>
         )}
       </div>

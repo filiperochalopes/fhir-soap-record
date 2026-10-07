@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { PluginCard } from "~/components/soap-plugins/PluginCard";
 import type { ClinicalSummary } from "~/lib/clinical-summary.server";
@@ -20,25 +21,26 @@ export function ClinicalSummaryCard(props: {
   soapNoteCount: number;
   summary: ClinicalSummary | null;
 }) {
+  const { t } = useTranslation();
   const showGenerateButton = Boolean(props.canGenerate && props.onGenerate);
 
   return (
     <PluginCard
-      badge={`${props.soapNoteCount} SOAP ${props.soapNoteCount === 1 ? "record" : "records"}`}
-      description="Built from all prior SOAP records, with priority on problems and conditions derived from the assessment section."
-      label="AI Summary"
-      title="IPS-like clinical overview"
+      badge={t("clinicalSummary.badge", { count: props.soapNoteCount })}
+      description={t("clinicalSummary.description")}
+      label={t("clinicalSummary.label")}
+      title={t("clinicalSummary.title")}
       tone="violet"
     >
       {!props.soapNoteCount ? (
         <p className="text-sm text-[color:var(--muted)]">
-          No previous SOAP records are available to generate the summary yet.
+          {t("clinicalSummary.empty")}
         </p>
       ) : props.isLoading ? (
         <div className="rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
           <div className="summary-shimmer h-5 w-56 rounded-full" />
           <p className="mt-4 text-sm font-medium text-violet-800 dark:text-violet-100">
-            Loading IPS AI Summary...
+            {t("clinicalSummary.loading")}
           </p>
           <div className="mt-4 space-y-3">
             <div className="summary-shimmer h-20 rounded-2xl" />
