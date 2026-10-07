@@ -1,10 +1,13 @@
 import type { AuthUser } from "@prisma/client";
 
 import { writeAuditLog } from "~/lib/audit.server";
-import { createNarrativeNote } from "~/lib/narrative-notes.server";
+import {
+  createNarrativeComposition,
+  createSoapComposition,
+  ensureImportUser,
+} from "~/lib/ehr/compositions.server";
 import { prisma } from "~/lib/prisma.server";
 import { upsertImportedPatient } from "~/lib/patients.server";
-import { createSoapNote, ensureImportUser } from "~/lib/soap-notes.server";
 import type { BundlePayload } from "~/lib/validation/import";
 import { stripHtml } from "~/lib/utils";
 
@@ -46,7 +49,7 @@ function patientDraftFlag(resource: Record<string, unknown>) {
     const record = asRecord(item);
     return (
       record?.url ===
-        "https://fhir-soap-record.example/StructureDefinition/patient-draft" &&
+        "https://soap-ehr.example/StructureDefinition/patient-draft" &&
       record.valueBoolean === true
     );
   });
@@ -601,7 +604,7 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
       }
 
       const created = isSoapComposition
-        ? await createSoapNote({
+        ? await createSoapComposition({
             assessment,
             authorUserId: importUser.id,
             encounteredAt: encounterDate,
@@ -613,7 +616,7 @@ export async function importFhirBundle(payload: BundlePayload, actor: AuthUser) 
             sourceSystem,
             subjective,
           })
-        : await createNarrativeNote({
+        : await createNarrativeComposition({
             authorUserId: importUser.id,
             encounteredAt: encounterDate,
             patientId,

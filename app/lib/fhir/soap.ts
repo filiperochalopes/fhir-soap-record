@@ -1,24 +1,12 @@
-import type { AuthUser, Contact, ContactPoint, Identifier, Patient, SoapNote } from "@prisma/client";
+import type { ClinicalCompositionRecord } from "~/lib/ehr/compositions.server";
 
 import {
   toSoapClinicalImpressionFhirId,
-  toSoapCompositionFhirId,
   toSoapConditionFhirId,
   toSoapEncounterFhirId,
   toSoapObservationFhirId,
 } from "~/lib/fhir/ids";
 import { escapeHtml } from "~/lib/utils";
-
-type SoapPatient = Patient & {
-  contacts: Contact[];
-  identifier: Identifier[];
-  telecom: ContactPoint[];
-};
-
-export type SoapNoteWithRelations = SoapNote & {
-  author: AuthUser;
-  patient: SoapPatient;
-};
 
 function section(title: string, text: string, entries?: string[]) {
   return {
@@ -35,7 +23,7 @@ function section(title: string, text: string, entries?: string[]) {
   };
 }
 
-export function toFhirEncounter(note: SoapNoteWithRelations) {
+export function toFhirEncounter(note: ClinicalCompositionRecord) {
   return {
     resourceType: "Encounter",
     id: toSoapEncounterFhirId(note.id),
@@ -67,7 +55,7 @@ export function toFhirEncounter(note: SoapNoteWithRelations) {
   };
 }
 
-export function toFhirObservation(note: SoapNoteWithRelations) {
+export function toFhirObservation(note: ClinicalCompositionRecord) {
   return {
     resourceType: "Observation",
     id: toSoapObservationFhirId(note.id),
@@ -83,11 +71,11 @@ export function toFhirObservation(note: SoapNoteWithRelations) {
       reference: `Encounter/${toSoapEncounterFhirId(note.id)}`,
     },
     effectiveDateTime: note.encounteredAt.toISOString(),
-    valueString: note.objective,
+    valueString: note.objective ?? "",
   };
 }
 
-export function toFhirCondition(note: SoapNoteWithRelations) {
+export function toFhirCondition(note: ClinicalCompositionRecord) {
   return {
     resourceType: "Condition",
     id: toSoapConditionFhirId(note.id),
@@ -95,7 +83,7 @@ export function toFhirCondition(note: SoapNoteWithRelations) {
       text: "active",
     },
     code: {
-      text: note.assessment,
+      text: note.assessment ?? "",
     },
     subject: {
       display: note.patient.name,
@@ -108,7 +96,7 @@ export function toFhirCondition(note: SoapNoteWithRelations) {
   };
 }
 
-export function toFhirClinicalImpression(note: SoapNoteWithRelations) {
+export function toFhirClinicalImpression(note: ClinicalCompositionRecord) {
   return {
     resourceType: "ClinicalImpression",
     id: toSoapClinicalImpressionFhirId(note.id),
@@ -121,15 +109,15 @@ export function toFhirClinicalImpression(note: SoapNoteWithRelations) {
       reference: `Encounter/${toSoapEncounterFhirId(note.id)}`,
     },
     date: note.encounteredAt.toISOString(),
-    summary: note.assessment,
-    description: note.assessment,
+    summary: note.assessment ?? "",
+    description: note.assessment ?? "",
   };
 }
 
-export function toFhirComposition(note: SoapNoteWithRelations) {
+export function toFhirComposition(note: ClinicalCompositionRecord) {
   return {
     resourceType: "Composition",
-    id: toSoapCompositionFhirId(note.id),
+    id: note.fhirCompositionId,
     status: "final",
     type: {
       text: "SOAP note",
@@ -149,15 +137,15 @@ export function toFhirComposition(note: SoapNoteWithRelations) {
       reference: `Encounter/${toSoapEncounterFhirId(note.id)}`,
     },
     section: [
-      section("Subjective", note.subjective),
-      section("Objective", note.objective, [
+      section("Subjective", note.subjective ?? ""),
+      section("Objective", note.objective ?? "", [
         `Observation/${toSoapObservationFhirId(note.id)}`,
       ]),
-      section("Assessment", note.assessment, [
+      section("Assessment", note.assessment ?? "", [
         `ClinicalImpression/${toSoapClinicalImpressionFhirId(note.id)}`,
         `Condition/${toSoapConditionFhirId(note.id)}`,
       ]),
-      section("Plan", note.plan),
+      section("Plan", note.plan ?? ""),
     ],
   };
 }

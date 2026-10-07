@@ -2,7 +2,7 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000") {
   return {
     openapi: "3.1.0",
     info: {
-      title: "FHIR SOAP Record MVP API",
+      title: "soap-ehr FHIR API",
       version: "0.1.0",
       description:
         "Single-runtime clinical MVP with token authentication and FHIR-oriented endpoints.",

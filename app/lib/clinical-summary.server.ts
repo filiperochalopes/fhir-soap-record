@@ -1,5 +1,4 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import type { SoapNote } from "@prisma/client";
 
 import { getDefaultChatModel } from "~/lib/ai/provider.server";
 
@@ -15,10 +14,13 @@ export type ClinicalSummary = {
   recentHistory: string | null;
 };
 
-type SummarySoapNote = Pick<
-  SoapNote,
-  "assessment" | "encounteredAt" | "objective" | "plan" | "subjective"
->;
+type SummarySoapNote = {
+  assessment: string | null;
+  encounteredAt: Date;
+  objective: string | null;
+  plan: string | null;
+  subjective: string | null;
+};
 
 type SummaryPatient = {
   birthDate: Date | null;
@@ -117,11 +119,11 @@ export async function generateClinicalSummary(input: {
   const soapNotes = [...input.soapNotes]
     .sort((left, right) => right.encounteredAt.getTime() - left.encounteredAt.getTime())
     .map((note) => ({
-      assessment: cleanText(note.assessment),
+      assessment: cleanText(note.assessment ?? ""),
       encounteredAt: note.encounteredAt.toISOString(),
-      objective: cleanText(note.objective),
-      plan: cleanText(note.plan),
-      subjective: cleanText(note.subjective),
+      objective: cleanText(note.objective ?? ""),
+      plan: cleanText(note.plan ?? ""),
+      subjective: cleanText(note.subjective ?? ""),
     }));
 
   const assessments = soapNotes.map((note, index) => ({

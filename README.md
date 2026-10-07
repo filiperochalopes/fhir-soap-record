@@ -1,6 +1,10 @@
-# FHIR SOAP Record MVP
+# soap-ehr
 
-This repository is a study-oriented FHIR project and a usable MVP for a private clinical office workflow while OpenMRS is not yet ready in Portuguese for this specific use case.
+`soap-ehr` is a compact clinical-record application for studying three complementary health-data standards:
+
+- openEHR-inspired archetypes, operational templates, compositions and versioning are the canonical clinical persistence model;
+- FHIR remains the interoperability API and import/export surface;
+- OMOP CDM 5.4.2 is a derived, read-only PostgreSQL analytical projection.
 
 The application is intentionally narrow:
 
@@ -21,7 +25,7 @@ The implementation stays as a single full-stack monolith and follows `YAGNI`, `D
 - React + TypeScript
 - Node.js
 - Prisma ORM
-- MySQL
+- PostgreSQL for the canonical EHR and OMOP analytics; MySQL only as the V1 migration source
 - Tailwind CSS
 - OpenAPI + Swagger UI
 - Docker Compose
@@ -30,31 +34,69 @@ Operational rules in this codebase:
 
 - frontend and backend run in the same Node application
 - web routes and API routes are served by the same runtime
-- the default local stack uses the MySQL container from Docker Compose
+- the default local V2 stack uses the PostgreSQL container from Docker Compose
 - schema changes are versioned through Prisma migrations in `prisma/migrations/`
 - Prisma Client remains the typed access layer used by the application
-- internal persistence stays workflow-oriented, while the API layer exposes FHIR-aligned resources
+- operational data such as users, patients, appointments and drafts remains relational
+- clinical content is stored only as versioned compositions validated against a template
+- the API layer projects canonical compositions to FHIR resources
+- `prisma/migrations/` contains only the V2 schema; V1 artifacts live exclusively under `docs/migration/v1/`
 
-## Entity and FHIR Diagram
+## Data Architecture
 
 ```mermaid
-graph TD
-  Patient --> Identifier
-  Patient --> ContactPoint
-  Patient --> Contact
-  Patient --> Appointment
-  Patient --> SoapNote
-  AuthUser --> AuthToken
-  AuthUser --> SoapNote
-  AuthUser --> AuditLog
+flowchart LR
+  Patient --> EhrRecord
+  EhrRecord --> Contribution
+  EhrRecord --> VersionedComposition
+  VersionedComposition --> CompositionVersion
+  Contribution --> CompositionVersion
+  TemplateDefinition --> CompositionVersion
+  ArchetypeDefinition --> CompositionVersion
 
-  Patient -. maps to .-> FHIRPatient[FHIR Patient]
-  Appointment -. maps to .-> FHIRAppointment[FHIR Appointment]
-  SoapNote -. maps to .-> FHIRComposition[FHIR Composition]
-  SoapNote -. maps to .-> FHIRClinicalImpression[FHIR ClinicalImpression]
-  SoapNote -. maps to .-> FHIRObservation[FHIR Observation]
-  SoapNote -. maps to .-> FHIRCondition[FHIR Condition]
+  CompositionVersion -. projects to .-> FHIRComposition[FHIR Composition]
+  CompositionVersion -. projects to .-> FHIRObservation[FHIR Observation]
+  CompositionVersion -. projects to .-> FHIRCondition[FHIR Condition]
+  CompositionVersion -. snapshot ETL .-> OMOP[OMOP CDM 5.4.2]
 ```
+
+## Modelo informacional openEHR (resumo)
+
+> [!NOTE]
+> ### 🧩 Arquétipos e templates usados no registro clínico
+> O `soap-ehr` usa um **núcleo inspirado no openEHR**: a `COMPOSITION` é o
+> documento clínico versionado; os arquétipos definem o tipo de cada parte; e o
+> template decide quais partes são obrigatórias em cada formulário. Este não é
+> um servidor openEHR de conformidade completa: não há processamento de
+> ADL/OPT, AQL ou todo o Reference Model.
+>
+> ```mermaid
+> flowchart TD
+>   C["COMPOSITION<br/>openEHR-EHR-COMPOSITION.encounter.v1<br/><i>consulta / documento clínico</i>"]
+>   C --> S["SOAP template<br/>soap-ehr.template.encounter-soap.v1"]
+>   C --> N["Narrative template<br/>soap-ehr.template.encounter-narrative.v1"]
+>   S --> S1["at0001 · Subjective<br/>OBSERVATION · story.v1"]
+>   S --> S2["at0002 · Objective<br/>OBSERVATION · clinical_exam.v1"]
+>   S --> S3["at0003 · Assessment<br/>EVALUATION · clinical_assessment.v1"]
+>   S --> S4["at0004 · Plan<br/>EVALUATION · care_plan.v1"]
+>   N --> N1["Seções repetíveis<br/>EVALUATION · clinical_narrative.v1"]
+> ```
+>
+> | Arquétipo | Tipo RM | Onde é usado | Conteúdo simplificado |
+> | --- | --- | --- | --- |
+> | `openEHR-EHR-COMPOSITION.encounter.v1` | `COMPOSITION` | Raiz dos dois templates | Uma consulta/documento clínico, com autor, data, contexto e seções. |
+> | `openEHR-EHR-OBSERVATION.story.v1` | `OBSERVATION` | SOAP → Subjective (`at0001`) | Relato e história informados pelo paciente. |
+> | `openEHR-EHR-OBSERVATION.clinical_exam.v1` | `OBSERVATION` | SOAP → Objective (`at0002`) | Achados objetivos do exame clínico. |
+> | `openEHR-EHR-EVALUATION.clinical_assessment.v1` | `EVALUATION` | SOAP → Assessment (`at0003`) | Avaliação/interpretação clínica. |
+> | `openEHR-EHR-EVALUATION.care_plan.v1` | `EVALUATION` | SOAP → Plan (`at0004`) | Plano de cuidado em texto livre: condutas, orientações, prescrições, retornos ou solicitações. |
+> | `openEHR-EHR-EVALUATION.clinical_narrative.v1` | `EVALUATION` | Nota narrativa → seções repetíveis | Texto clínico livre organizado em uma ou mais seções. |
+>
+> **Como ler a estrutura:** `COMPOSITION` contém `SECTION`; cada `SECTION`
+> contém uma `OBSERVATION` ou `EVALUATION`; o texto é armazenado em um
+> `ITEM_TREE` com um `ELEMENT` (`DV_TEXT`). Nas `OBSERVATION`, o texto fica em
+> `HISTORY → POINT_EVENT → ITEM_TREE`; nas `EVALUATION`, fica diretamente em
+> `ITEM_TREE`. A composição validada é salva como uma versão imutável e é a fonte
+> canônica para as projeções FHIR e OMOP.
 
 ## Local Run
 
@@ -90,22 +132,37 @@ pnpm dev
 
 ## Docker Run
 
-Use Docker Compose for a full local stack with MySQL and the Node monolith:
+Use Docker Compose for the PostgreSQL V2 database and the Node monolith:
 
 ```bash
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-The `db` service creates the empty `fhir_soap_record` database, and the `app` service applies Prisma migrations automatically on startup.
-
-If ports `3000` or `3306` are already in use on the host, override them with `APP_PORT` and `DB_PORT`.
-
-To run the app against an external MySQL address instead of the bundled `db` service:
+The default stack is the application runtime only. The legacy MySQL source and
+the OMOP projection are optional and live behind Compose profiles:
 
 ```bash
-export DATABASE_URL="mysql://user:password@host:3306/database"
-docker compose -f compose.yml -f compose.external.yml up --build app
+# add the OMOP CDM schema
+docker compose -f compose.yml -f compose.dev.yml --profile omop up -d
+
+# add the stale V1 MySQL source
+docker compose -f compose.yml -f compose.dev.yml --profile legacy up -d
 ```
+
+The database services are deliberately named by lifecycle:
+
+- `soap-ehr-db`: PostgreSQL 17 database `soap_ehr`, containing the canonical
+  runtime in `public`, OMOP CDM in `omop`, and ETL metadata in `soap_ehr_etl`;
+- `soap-ehr-db-legacy`: MySQL 8.4 database `fhir_soap_record`, retained only as
+  the V1 fixture/source and never read by the application runtime.
+
+The `soap-ehr` service applies only the PostgreSQL V2 Prisma migrations. The
+`soap-ehr-omop-init` service, under the `omop` profile, installs the pinned
+39-table CDM 5.4.2 schema in the same database; see the
+[OMOP runbook](docs/omop.md). The application never requires it to start.
+
+If ports `3000`, `5438` or `3306` are already in use, override them with
+`APP_PORT`, `DB_PORT` and `LEGACY_DB_PORT` respectively.
 
 To test S3-compatible attachment storage locally, enable the RustFS override first:
 
@@ -114,22 +171,39 @@ cp compose.override.yml.bak compose.override.yml
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-If that external database already has the application tables and was not created by Prisma Migrate, baseline it once before the first deploy:
+For the real single-instance cutover, run one command from the checked-out V2
+repository:
 
 ```bash
-pnpm prisma:migrate:resolve --applied 20260322000000_init
-pnpm prisma:migrate:deploy
+pnpm migrate:mysql-to-postgres
 ```
+
+It stops the old app, reattaches its MySQL volume as `soap-ehr-db-legacy`, makes
+a safety dump, creates `soap-ehr-db` as PostgreSQL, migrates and verifies V2,
+builds OMOP, creates a PostgreSQL recovery dump, and starts the app against the
+new database. Backups are written under `backups/`; MySQL is not deleted.
+
+Exercise the same command against the local development Compose with:
+
+```bash
+SOAP_EHR_COMPOSE_FILE=compose.dev.yml pnpm migrate:mysql-to-postgres
+```
+
+See the [migration runbook](docs/migration/README.md) before a real cutover.
 
 ## Environment Variables
 
-- `DATABASE_URL`: MySQL connection string used by Prisma Client
+- `DATABASE_URL`: V2 runtime connection string used by Prisma Client
+- `V1_DATABASE_URL`: migration-tool connection string; the application runtime never reads it
+- `OMOP_DATABASE_URL`: ETL connection to the same PostgreSQL database; OMOP uses separate schemas
 - `APP_PORT`: host port published for the web app in Docker Compose
 - `APP_URL`: external base URL used in generated docs and examples
-- `DB_PORT`: host port published for MySQL in Docker Compose
-- `DB_NAME`: database name created by the bundled MySQL container
-- `DB_USER`: application user created by the bundled MySQL container
-- `DB_PASS`: password used by the bundled MySQL container and default local `DATABASE_URL`
+- `DB_PORT`: host port published for PostgreSQL, default `5438`
+- `LEGACY_DB_PORT`: host port published for the legacy MySQL service, default `3306`
+- `SOAP_EHR_DB_NAME`: V2 database name, default `soap_ehr`
+- `V1_DB_NAME`: V1 fixture/source database name, default `fhir_soap_record`
+- `DB_USER`, `DB_PASS`: PostgreSQL V2 credentials
+- `LEGACY_DB_USER`, `LEGACY_DB_PASS`: MySQL V1 backup/migration credentials
 - `PORT`: Node application port
 - `COOKIE_NAME`: auth cookie name for web login
 - `API_DRY_RUN`: when `true`, FHIR API writes are stored in process memory instead of Prisma; restarting the app/container clears the dry-run data
@@ -157,7 +231,7 @@ Practical rule:
 - run `pnpm prisma:generate` after schema changes
 - create new schema changes with `pnpm prisma:migrate:dev --name <migration-name>`
 - apply committed migrations with `pnpm prisma:migrate:deploy`
-- when adopting an existing external schema, mark the initial migration as applied before deploying further changes
+- never point `DATABASE_URL` at the V1 database; the two migration histories are intentionally isolated
 
 ## Create a User and Token
 

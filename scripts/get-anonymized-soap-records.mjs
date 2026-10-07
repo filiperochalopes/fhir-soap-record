@@ -81,27 +81,40 @@ async function main() {
 
   try {
     while (true) {
-      const notes = await prisma.soapNote.findMany({
+      const versions = await prisma.compositionVersion.findMany({
+        where: { templateId: "soap-ehr.template.encounter-soap.v1" },
         take: batchSize,
         ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
         orderBy: { id: "asc" },
         select: {
           id: true,
-          subjective: true,
-          objective: true,
-          assessment: true,
-          plan: true,
+          content: true,
         },
       });
 
-      if (notes.length === 0) break;
+      if (versions.length === 0) break;
 
-      for (const note of notes) {
+      for (const version of versions) {
+        const byTitle = Object.fromEntries(
+          (version.content?.content ?? []).map((section) => {
+            const entry = section.items?.[0];
+            const tree = entry?._type === "OBSERVATION"
+              ? entry.data?.events?.[0]?.data
+              : entry?.data;
+            return [section.name?.value, tree?.items?.[0]?.value?.value ?? ""];
+          }),
+        );
+        const note = {
+          subjective: byTitle.Subjective ?? "",
+          objective: byTitle.Objective ?? "",
+          assessment: byTitle.Assessment ?? "",
+          plan: byTitle.Plan ?? "",
+        };
         exported += 1;
         await writeChunk(output, formatRecord(note, exported));
       }
 
-      cursorId = notes.at(-1).id;
+      cursorId = versions.at(-1).id;
     }
   } finally {
     await prisma.$disconnect();

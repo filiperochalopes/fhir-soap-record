@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { saveAppointment } from "~/lib/appointments.server";
+import {
+  getClinicalCompositions,
+  getCompositionByVersionId,
+} from "~/lib/ehr/compositions.server";
 import { env } from "~/lib/env.server";
 import { toFhirAppointment } from "~/lib/fhir/appointment";
 import {
@@ -23,13 +27,11 @@ import {
   parseFhirPatientResource,
 } from "~/lib/fhir/write";
 import { importFhirBundle } from "~/lib/import.server";
-import { getNarrativeNoteById } from "~/lib/narrative-notes.server";
 import {
   PATIENT_DUPLICATE_IDENTITY_MESSAGE,
   savePatient,
 } from "~/lib/patients.server";
 import { prisma } from "~/lib/prisma.server";
-import { getSoapNoteById } from "~/lib/soap-notes.server";
 import type { BundlePayload } from "~/lib/validation/import";
 import type { AppointmentInput } from "~/lib/validation/appointments";
 import type { PatientInput } from "~/lib/validation/patients";
@@ -257,7 +259,7 @@ function normalizePatientFhirResource(input: PatientInput, active: boolean, id: 
       ? {
           extension: [
             {
-              url: "https://fhir-soap-record.example/StructureDefinition/patient-draft",
+              url: "https://soap-ehr.example/StructureDefinition/patient-draft",
               valueBoolean: true,
             },
           ],
@@ -482,40 +484,9 @@ class PrismaFhirStore implements FhirStore {
       return [];
     }
 
-    const [soapNotes, narrativeNotes] = await Promise.all([
-      prisma.soapNote.findMany({
-        where: patientId ? { patientId } : undefined,
-        include: {
-          author: true,
-          patient: {
-            include: {
-              contacts: true,
-              identifier: true,
-              telecom: true,
-            },
-          },
-        },
-        orderBy: {
-          encounteredAt: "desc",
-        },
-      }),
-      prisma.narrativeNote.findMany({
-        where: patientId ? { patientId } : undefined,
-        include: {
-          author: true,
-          patient: {
-            include: {
-              contacts: true,
-              identifier: true,
-              telecom: true,
-            },
-          },
-        },
-        orderBy: {
-          encounteredAt: "desc",
-        },
-      }),
-    ]);
+    const compositions = await getClinicalCompositions(patientId ?? undefined);
+    const soapNotes = compositions.filter((item) => item.kind === "soap");
+    const narrativeNotes = compositions.filter((item) => item.kind === "narrative");
 
     return [
       ...soapNotes.map(toFhirComposition),
@@ -533,11 +504,11 @@ class PrismaFhirStore implements FhirStore {
       }
 
       if (parsedId.kind === "soap") {
-        const note = await getSoapNoteById(parsedId.noteId);
+        const note = await getCompositionByVersionId(parsedId.versionId);
         return note ? (toFhirComposition(note) as FhirResource) : null;
       }
 
-      const note = await getNarrativeNoteById(parsedId.noteId);
+      const note = await getCompositionByVersionId(parsedId.versionId);
       return note ? (toFhirNarrativeComposition(note) as FhirResource) : null;
     }
 
@@ -549,7 +520,7 @@ class PrismaFhirStore implements FhirStore {
           : resourceType === "Condition"
             ? parseSoapConditionFhirId(resourceId)
             : parseSoapClinicalImpressionFhirId(resourceId);
-    const note = noteId ? await getSoapNoteById(noteId) : null;
+    const note = noteId ? await getCompositionByVersionId(noteId) : null;
     if (!note) {
       return null;
     }

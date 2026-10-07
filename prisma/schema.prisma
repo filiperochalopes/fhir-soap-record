@@ -1,9 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "darwin-arm64", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -18,16 +19,15 @@ model Patient {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  mergedInto     Patient?        @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id])
-  replaces       Patient[]       @relation("PatientMerge")
-  telecom        ContactPoint[]
-  identifier     Identifier[]
-  appointments   Appointment[]
-  encounterDrafts EncounterDraft[]
-  clinicalAttachments ClinicalAttachment[]
-  contacts       Contact[]
-  soapNotes      SoapNote[]
-  narrativeNotes NarrativeNote[]
+  mergedInto                    Patient?                       @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id])
+  replaces                      Patient[]                      @relation("PatientMerge")
+  telecom                       ContactPoint[]
+  identifier                    Identifier[]
+  appointments                  Appointment[]
+  encounterDrafts               EncounterDraft[]
+  clinicalAttachments           ClinicalAttachment[]
+  contacts                      Contact[]
+  ehr                           EhrRecord?
   clinicalDocumentWebhookEvents ClinicalDocumentWebhookEvent[]
 }
 
@@ -78,8 +78,8 @@ model Appointment {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
-  patient   Patient    @relation(fields: [patientId], references: [id])
-  soapNotes SoapNote[]
+  patient             Patient              @relation(fields: [patientId], references: [id])
+  compositionVersions CompositionVersion[]
 }
 
 model GeneralSetting {
@@ -99,15 +99,15 @@ model AuthUser {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  tokens         AuthToken[]
-  soapNotes      SoapNote[]
-  narrativeNotes NarrativeNote[]
-  encounterDrafts EncounterDraft[]
-  clinicalAttachments ClinicalAttachment[]
-  attachmentPluginExecutions AttachmentPluginExecution[]
+  tokens                        AuthToken[]
+  contributions                 Contribution[]
+  compositionVersions           CompositionVersion[]
+  encounterDrafts               EncounterDraft[]
+  clinicalAttachments           ClinicalAttachment[]
+  attachmentPluginExecutions    AttachmentPluginExecution[]
   clinicalDocumentWebhookEvents ClinicalDocumentWebhookEvent[]
-  pluginCredentials UserPluginCredential[]
-  auditLogs      AuditLog[]
+  pluginCredentials             UserPluginCredential[]
+  auditLogs                     AuditLog[]
 
   @@unique([crm, crmUf])
 }
@@ -127,47 +127,111 @@ model AuthToken {
   @@unique([tokenHash])
 }
 
-model SoapNote {
-  id             Int      @id @default(autoincrement())
-  patientId      Int      @map("patient_id")
-  authorUserId   Int      @map("author_user_id")
-  appointmentId  Int?     @map("appointment_id")
-  encounteredAt  DateTime @map("encountered_at")
-  subjective     String   @db.Text
-  objective      String   @db.Text
-  assessment     String   @db.Text
-  plan           String   @db.Text
-  sourceSystem   String?  @map("source_system")
-  sourceRecordId String?  @map("source_record_id")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+model EhrRecord {
+  id        String   @id @default(uuid()) @db.Char(36)
+  systemId  String   @default("soap-ehr") @map("system_id")
+  patientId Int      @unique @map("patient_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  appointment Appointment? @relation(fields: [appointmentId], references: [id])
-  clinicalAttachments ClinicalAttachment[]
-  patient     Patient      @relation(fields: [patientId], references: [id])
-  author      AuthUser     @relation(fields: [authorUserId], references: [id])
-
-  @@index([appointmentId])
-  @@unique([sourceSystem, sourceRecordId])
+  patient               Patient                @relation(fields: [patientId], references: [id])
+  contributions         Contribution[]
+  versionedCompositions VersionedComposition[]
 }
 
-model NarrativeNote {
-  id             Int      @id @default(autoincrement())
-  patientId      Int      @map("patient_id")
-  authorUserId   Int      @map("author_user_id")
-  encounteredAt  DateTime @map("encountered_at")
-  title          String?
-  sections       Json
-  sourceSystem   String?  @map("source_system")
-  sourceRecordId String?  @map("source_record_id")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+model Contribution {
+  id              String   @id @default(uuid()) @db.Char(36)
+  ehrId           String   @map("ehr_id") @db.Char(36)
+  committerUserId Int      @map("committer_user_id")
+  changeType      String   @default("creation") @map("change_type")
+  description     String?
+  committedAt     DateTime @default(now()) @map("committed_at")
 
-  patient Patient  @relation(fields: [patientId], references: [id])
-  author  AuthUser @relation(fields: [authorUserId], references: [id])
-  clinicalAttachments ClinicalAttachment[]
+  ehr       EhrRecord            @relation(fields: [ehrId], references: [id])
+  committer AuthUser             @relation(fields: [committerUserId], references: [id])
+  versions  CompositionVersion[]
 
+  @@index([ehrId, committedAt])
+  @@index([committerUserId])
+}
+
+model VersionedComposition {
+  id        String   @id @default(uuid()) @db.Char(36)
+  ehrId     String   @map("ehr_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ehr      EhrRecord            @relation(fields: [ehrId], references: [id])
+  versions CompositionVersion[]
+
+  @@index([ehrId, createdAt])
+}
+
+model ArchetypeDefinition {
+  id          String   @id
+  rmType      String   @map("rm_type")
+  concept     String
+  language    String   @default("pt-BR")
+  definition  Json
+  contentHash String   @map("content_hash") @db.Char(64)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  compositionVersions CompositionVersion[]
+}
+
+model TemplateDefinition {
+  id                  String   @id
+  rootArchetypeId     String   @map("root_archetype_id")
+  name                String
+  version             String
+  language            String   @default("pt-BR")
+  operationalTemplate Json     @map("operational_template")
+  contentHash         String   @map("content_hash") @db.Char(64)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  compositionVersions CompositionVersion[]
+}
+
+model CompositionVersion {
+  id                     String   @id @default(uuid()) @db.Char(36)
+  versionedCompositionId String   @map("versioned_composition_id") @db.Char(36)
+  contributionId         String   @map("contribution_id") @db.Char(36)
+  precedingVersionId     String?  @map("preceding_version_id") @db.Char(36)
+  templateId             String   @map("template_id")
+  archetypeId            String   @map("archetype_id")
+  composerUserId         Int      @map("composer_user_id")
+  appointmentId          Int?     @map("appointment_id")
+  versionNumber          Int      @default(1) @map("version_number")
+  lifecycleState         String   @default("complete") @map("lifecycle_state")
+  category               String   @default("event")
+  language               String   @default("pt-BR")
+  territory              String   @default("BR")
+  title                  String
+  encounteredAt          DateTime @map("encountered_at")
+  content                Json
+  contentHash            String   @map("content_hash") @db.Char(64)
+  fhirCompositionId      String   @unique @map("fhir_composition_id")
+  sourceSystem           String?  @map("source_system")
+  sourceRecordId         String?  @map("source_record_id")
+  sourceMetadata         Json?    @map("source_metadata")
+  committedAt            DateTime @default(now()) @map("committed_at")
+
+  versionedComposition VersionedComposition @relation(fields: [versionedCompositionId], references: [id])
+  contribution         Contribution         @relation(fields: [contributionId], references: [id])
+  precedingVersion     CompositionVersion?  @relation("CompositionVersionHistory", fields: [precedingVersionId], references: [id])
+  followingVersions    CompositionVersion[] @relation("CompositionVersionHistory")
+  template             TemplateDefinition   @relation(fields: [templateId], references: [id])
+  archetype            ArchetypeDefinition  @relation(fields: [archetypeId], references: [id])
+  composer             AuthUser             @relation(fields: [composerUserId], references: [id])
+  appointment          Appointment?         @relation(fields: [appointmentId], references: [id])
+  clinicalAttachments  ClinicalAttachment[]
+
+  @@unique([versionedCompositionId, versionNumber])
   @@unique([sourceSystem, sourceRecordId])
+  @@index([composerUserId])
+  @@index([appointmentId])
+  @@index([templateId, encounteredAt])
+  @@index([archetypeId])
 }
 
 model EncounterDraft {
@@ -182,8 +246,8 @@ model EncounterDraft {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
-  author AuthUser @relation(fields: [authorUserId], references: [id])
-  patient Patient @relation(fields: [patientId], references: [id])
+  author              AuthUser             @relation(fields: [authorUserId], references: [id])
+  patient             Patient              @relation(fields: [patientId], references: [id])
   clinicalAttachments ClinicalAttachment[]
 
   @@unique([patientId, authorUserId, draftKey])
@@ -191,34 +255,31 @@ model EncounterDraft {
 }
 
 model ClinicalAttachment {
-  id              Int      @id @default(autoincrement())
-  patientId       Int      @map("patient_id")
-  authorUserId    Int      @map("author_user_id")
-  draftId         Int?     @map("draft_id")
-  appointmentId   Int?     @map("appointment_id")
-  soapNoteId      Int?     @map("soap_note_id")
-  narrativeNoteId Int?     @map("narrative_note_id")
-  status          String   @default("draft")
-  fileName        String   @map("file_name")
-  contentType     String   @map("content_type")
-  byteSize        Int      @map("byte_size")
-  sha256          String
-  s3Bucket        String   @map("s3_bucket")
-  s3Key           String   @map("s3_key")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+  id                   Int      @id @default(autoincrement())
+  patientId            Int      @map("patient_id")
+  authorUserId         Int      @map("author_user_id")
+  draftId              Int?     @map("draft_id")
+  appointmentId        Int?     @map("appointment_id")
+  compositionVersionId String?  @map("composition_version_id") @db.Char(36)
+  status               String   @default("draft")
+  fileName             String   @map("file_name")
+  contentType          String   @map("content_type")
+  byteSize             Int      @map("byte_size")
+  sha256               String
+  s3Bucket             String   @map("s3_bucket")
+  s3Key                String   @map("s3_key")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
 
-  author AuthUser @relation(fields: [authorUserId], references: [id])
-  draft EncounterDraft? @relation(fields: [draftId], references: [id])
-  patient Patient @relation(fields: [patientId], references: [id])
-  soapNote SoapNote? @relation(fields: [soapNoteId], references: [id])
-  narrativeNote NarrativeNote? @relation(fields: [narrativeNoteId], references: [id])
-  pluginExecutions AttachmentPluginExecution[]
+  author             AuthUser                    @relation(fields: [authorUserId], references: [id])
+  draft              EncounterDraft?             @relation(fields: [draftId], references: [id])
+  patient            Patient                     @relation(fields: [patientId], references: [id])
+  compositionVersion CompositionVersion?         @relation(fields: [compositionVersionId], references: [id])
+  pluginExecutions   AttachmentPluginExecution[]
 
   @@index([draftId])
   @@index([patientId, status])
-  @@index([soapNoteId])
-  @@index([narrativeNoteId])
+  @@index([compositionVersionId])
 }
 
 model AttachmentPluginExecution {
@@ -235,8 +296,8 @@ model AttachmentPluginExecution {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  attachment ClinicalAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
-  requestedBy AuthUser @relation(fields: [requestedByUserId], references: [id])
+  attachment  ClinicalAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  requestedBy AuthUser           @relation(fields: [requestedByUserId], references: [id])
 
   @@unique([attachmentId, pluginId])
   @@index([pluginId, status])

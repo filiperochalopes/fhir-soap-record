@@ -2,6 +2,9 @@
 
 > **Sistema avaliado:** fhir-soap-record  
 > **Data da avaliação:** 2026-06-23  
+> **Evidências revisadas em:** 2026-09-07 (migração para PostgreSQL e projeção OMOP).
+> Apenas o texto das evidências foi atualizado; nenhum veredito de conformidade
+> foi reavaliado.  
 > **Referência:** [S_RES_5_2.md](./S_RES_5_2.md) — SBIS Versão 5.2 (10/11/2021)  
 > **Escopo:** Requisitos NGS1 (obrigatórios) + NGS2 (opcional, não priorizado)
 
@@ -18,7 +21,10 @@
 
 ## Contexto do Sistema
 
-O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco MySQL (Prisma ORM) e armazenamento de arquivos em S3. A autenticação é feita via **token Bearer** (sem login usuário/senha na interface; tokens são gerados por scripts CLI). O sistema é de **instância única** (não SaaS multi-tenant). A gestão de usuários está restrita a scripts no servidor — não há interface administrativa na aplicação.
+O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco PostgreSQL (Prisma ORM) e armazenamento de arquivos em S3. O MySQL
+permanece apenas como fonte de migração V1, fora do caminho de execução da
+aplicação. Uma projeção analítica OMOP CDM 5.4.2, derivada e somente leitura,
+vive em schema separado do mesmo banco. A autenticação é feita via **token Bearer** (sem login usuário/senha na interface; tokens são gerados por scripts CLI). O sistema é de **instância única** (não SaaS multi-tenant). A gestão de usuários está restrita a scripts no servidor — não há interface administrativa na aplicação.
 
 ---
 
@@ -79,9 +85,9 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 
 | ID | Título | Status | Evidência / Notas |
 |----|--------|:------:|-------------------|
-| NGS1.04.01 | Geração de cópia de segurança | ⚠️ PARCIAL | Sem funcionalidade de backup na aplicação. Depende do SGBD externo (MySQL dumps manuais/automatizados via Docker/infraestrutura). O `docker-compose` não inclui rotinas de backup. |
-| NGS1.04.03 | Sigilo da cópia de segurança | ❌ PENDENTE | Sem encriptação automática de backups pela aplicação. |
-| NGS1.04.04 | Restauração de cópia de segurança | ❌ PENDENTE | Sem funcionalidade de restauração na aplicação. |
+| NGS1.04.01 | Geração de cópia de segurança | ⚠️ PARCIAL | `scripts/backup-v2-postgres.sh` gera dump `pg_dump` com SHA-256 de verificação (`pnpm v2:backup`); `scripts/backup-v1-mysql.sh` faz o equivalente para a fonte V1. Não há agendamento nem rotina de backup automática no `docker-compose`. **Veredito a reavaliar.** |
+| NGS1.04.03 | Sigilo da cópia de segurança | ❌ PENDENTE | Os dumps são gravados em texto plano sob `backups/`, sem encriptação. O SHA-256 garante integridade, não sigilo. |
+| NGS1.04.04 | Restauração de cópia de segurança | ❌ PENDENTE | `scripts/restore-v1-mysql.sh` restaura apenas a fonte V1 (MySQL), protegido por `CONFIRM_RESTORE_V1=1`. Não há restauração do PostgreSQL V2 canônico. |
 | NGS1.04.05 | Integridade na restauração | ❌ PENDENTE | Sem verificação de integridade na restauração. |
 | NGS1.04.06 | Alerta de limiar de ocupação | ❌ PENDENTE | Sem monitoramento de espaço em disco ou alertas de limiar na aplicação. |
 
@@ -93,7 +99,7 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 |----|--------|:------:|-------------------|
 | NGS1.05.01 | Segurança da comunicação com o usuário | ✅ CONFORME | Cookie `secure` em produção; aplicação serve HTTPS quando devidamente configurada. |
 | NGS1.05.02 | Processamento de dados no lado servidor | ✅ CONFORME | Arquitetura React Router com SSR — todo processamento e validação no servidor. |
-| NGS1.05.03 | Segurança da comunicação entre componentes | ⚠️ PARCIAL | Conexão MySQL via `DATABASE_URL` sem configuração explícita de TLS no `.env.example`. S3 usa HTTPS. Requer: configurar SSL/TLS na string de conexão do MySQL. |
+| NGS1.05.03 | Segurança da comunicação entre componentes | ⚠️ PARCIAL | Conexão PostgreSQL via `DATABASE_URL` sem configuração explícita de TLS no `.env.example`. S3 usa HTTPS. Requer: definir `sslmode` na string de conexão do PostgreSQL. |
 | NGS1.05.04 | Integridade e origem de componentes dinâmicos | N/A | Sem componentes que exijam download para execução (ActiveX, Applet, etc.). |
 
 ---
@@ -102,7 +108,7 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 
 | ID | Título | Status | Evidência / Notas |
 |----|--------|:------:|-------------------|
-| NGS1.06.01 | Utilização de SGBD | ✅ CONFORME | MySQL via Prisma para todos os dados. Arquivos em S3 com chave `sha256` como `s3Key` — sem identificação por nome/conteúdo. |
+| NGS1.06.01 | Utilização de SGBD | ✅ CONFORME | PostgreSQL via Prisma para todos os dados. Arquivos em S3 com chave `sha256` como `s3Key` — sem identificação por nome/conteúdo. |
 | NGS1.06.02 | Segurança de componentes que manipulam dados | ⚠️ PARCIAL | Requer Estágio 3. Não há evidência de limpeza explícita de arquivos temporários em todas as operações (ex.: OCR, importação). |
 | NGS1.06.03 | Validação de dados de entrada | ✅ CONFORME | Prisma ORM previne SQL injection. React Router valida FormData no servidor. Sem evidência de uso de `eval` ou concatenação de SQL. |
 | NGS1.06.04 | Segregação dos dados por organização | N/A | Sistema não opera em modo SaaS multi-tenant. |
@@ -131,9 +137,9 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 |----|--------|:------:|-------------------|
 | NGS1.08.01 | Tópicos dos manuais | ⚠️ PARCIAL | `README.md` existe com instruções básicas. Faltam: manual de usuário por perfil, manual de administração, manual de segurança, manual de instalação de componentes. |
 | NGS1.08.02 | Referência à versão na documentação | ❌ PENDENTE | O `README.md` não especifica versão do software. |
-| NGS1.08.03 | Operações de backup | ❌ PENDENTE | Nenhum manual descreve procedimentos de backup/restauração. |
+| NGS1.08.03 | Operações de backup | ❌ PENDENTE | O runbook de migração (`docs/migration/README.md`) descreve os dumps do cutover, mas não há manual de backup/restauração de rotina. |
 | NGS1.08.04 | Restrição de acesso a entidades não autenticadas | ❌ PENDENTE | Não documentado formalmente. |
-| NGS1.08.05 | Configuração da segurança da comunicação entre componentes | ❌ PENDENTE | Não documentado (TLS entre app e MySQL, S3). |
+| NGS1.08.05 | Configuração da segurança da comunicação entre componentes | ❌ PENDENTE | Não documentado (TLS entre app e PostgreSQL, S3). |
 | NGS1.08.06 | Sincronização de relógio | ❌ PENDENTE | Não documentado no README. |
 | NGS1.08.07 | Guarda da cópia de segurança | ❌ PENDENTE | Não documentado. |
 | NGS1.08.08 | Segregação dos componentes | ⚠️ PARCIAL | `compose.yml` e `compose.dev.yml` mostram separação de serviços, mas sem diagrama de comunicação formal. |
@@ -150,7 +156,7 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 |----|--------|:------:|-------------------|
 | NGS1.09.01 | Fonte temporal | ✅ CONFORME | Todos os timestamps usam `new Date()` no servidor (Node.js). Prisma gerencia `createdAt`/`updatedAt` no servidor. |
 | NGS1.09.02 | Uniformidade para exportação (RFC 3339) | ⚠️ PARCIAL | Prisma retorna objetos `Date` do Node.js. Não há verificação explícita de que todas as exportações usam formato RFC 3339. |
-| NGS1.09.03 | Registro de tempo no banco de dados | ✅ CONFORME | MySQL armazena `DATETIME` com referência UTC. Campos `createdAt`/`updatedAt` em todos os modelos. |
+| NGS1.09.03 | Registro de tempo no banco de dados | ✅ CONFORME | PostgreSQL armazena `timestamp` com referência UTC. Campos `createdAt`/`updatedAt` em todos os modelos. |
 | NGS1.09.04 | Uniformidade para entrada de tempo | ⚠️ PARCIAL | Não verificado na UI — necessita auditoria dos componentes de seleção de data. |
 | NGS1.09.05 | Uniformidade para exibição de tempo | ⚠️ PARCIAL | Não verificado na UI — necessita auditoria dos componentes de exibição de data. |
 | NGS1.09.06 | Time zone e local da instituição | ✅ CONFORME | `CLINIC_TIMEZONE_OFFSET` configurável via env. |
@@ -234,7 +240,7 @@ O **fhir-soap-record** é uma aplicação web (React Router + Node.js) com banco
 11. **NGS1.03.09** — Adicionar CPF como identificador único de usuário
 12. **NGS1.07.05** — Adicionar IP de origem aos registros de auditoria
 13. **NGS1.08.01** — Criar documentação completa (manuais de usuário, admin, segurança)
-14. **NGS1.05.03** — Configurar TLS na conexão MySQL
+14. **NGS1.05.03** — Configurar TLS (`sslmode`) na conexão PostgreSQL
 
 ### 🟢 Complementar — Para estágio 2/3
 

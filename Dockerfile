@@ -7,7 +7,7 @@ WORKDIR /app
 # Ghostscript compresses scanned PDF attachments before they reach S3.
 RUN apk add --no-cache ghostscript
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 RUN pnpm install --frozen-lockfile
 
@@ -21,6 +21,17 @@ COPY . .
 RUN pnpm prisma generate
 RUN pnpm build
 
+# Disposable cutover image. It contains the V1 reader, V2 converter and OMOP
+# ETL with their development-only CLI dependencies, but is never used as the
+# application runtime image.
+FROM deps AS migration
+WORKDIR /app
+
+COPY . .
+RUN pnpm prisma generate
+
+CMD ["sh"]
+
 FROM node:22-alpine AS runner
 ARG PNPM_VERSION
 WORKDIR /app
@@ -32,7 +43,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Install only production dependencies
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate && \
     pnpm install --prod --frozen-lockfile
 
